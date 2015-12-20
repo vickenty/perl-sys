@@ -1,0 +1,3 @@
+[submodule "ouroboros"]
+	path = ouroboros
+	url = https://github.com/vickenty/ouroboros
