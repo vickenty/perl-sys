@@ -358,8 +358,17 @@ my @perl;
 
         ($type, @args) = map s/^\s+//r =~ s/\s+$//r, ($type, @args);
         
-        # public ("A"), documented ("d") and not experimental ("M")
-        next unless $flags =~ /A/ && $flags =~ /d/ && $flags !~ /M/;
+        next unless
+            # public
+            $flags =~ /A/ &&
+            # documented
+            $flags =~ /d/ &&
+            # not a macro
+            $flags !~ /m/ &&
+            # not for backwards compat
+            $flags !~ /b/
+            # not experimental
+            && $flags !~ /M/;
 
         # va_list is useless in rust anyway
         next if grep /\bva_list\b/, $type, @args;
