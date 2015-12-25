@@ -92,7 +92,7 @@ sub map_type {
     # canonicalize const placement, "const int" is the same as "int const"
     $work =~ s/const\s+(\w+)/$1 const/;
 
-    (my $base_type, $work) = $work =~ /^((?:unsigned )?\w+)\s*(.*)/ 
+    (my $base_type, $work) = $work =~ /^((?:unsigned )?\w+)\s*(.*)/
         or die "unparsable type '$type'";
 
     my $rust_type = TYPEMAP->{$base_type}
@@ -180,7 +180,7 @@ sub _fn {
         if ($arg eq "...") {
             push @formal, $arg;
         }
-        else { 
+        else {
             my ($type, $name);
 
             if ($genname || $unnamed) {
@@ -205,9 +205,9 @@ sub _fn {
     }
 
     my $returns = $type eq "void" ? "" : " -> " . map_type($type);
-    
+
     local $" = ", ";
-    
+
     return "$qual fn $name(@formal)$returns";
 }
 
@@ -257,7 +257,7 @@ sub perl_types {
     my $c = \%Config::Config;
     my $os = \%Ouroboros::Size;
 
-    mod("types", 
+    mod("types",
         "#![allow(non_camel_case_types)]",
 
         map(enum($_), @{STUB_TYPES()}),
@@ -377,7 +377,7 @@ my @perl;
         my ($flags, $type, $name, @args) = split /\s*\|\s*/;
 
         ($type, @args) = map s/^\s+//r =~ s/\s+$//r, ($type, @args);
-        
+
         next unless
             # public
             $flags =~ /A/ &&
