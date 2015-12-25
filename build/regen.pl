@@ -400,6 +400,7 @@ my @perl;
 my @lines = (
     perl_types(),
     "",
+    "#[macro_use]",
     mod("funcs",
         "use types::*;",
         perl_funcs(\@perl),
