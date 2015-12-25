@@ -171,7 +171,7 @@ sub _fn {
     my @formal;
 
     push @formal, ($unnamed ? "" : "my_perl: ") . map_type("PerlInterpreter*")
-        if $genpthx;
+        if $genpthx && $Config::Config{usemultiplicity};
 
     my $argname = "arg0";
     foreach my $arg (@args) {
