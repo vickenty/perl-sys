@@ -168,6 +168,8 @@ sub _fn {
     my $genname = $flags =~ /!/;
     my $genpthx = $flags !~ /n/;
 
+    $name = $flags =~ /p/ ? "Perl_$name" : $name;
+
     my @formal;
 
     push @formal, ($unnamed ? "" : "my_perl: ") . map_type("PerlInterpreter*")
@@ -291,16 +293,34 @@ sub perl_types {
     );
 }
 
+sub perl_macro {
+    my ($flags, undef, $name) = @_;
+
+    my $perl_name = $flags =~ /p/ ? "Perl_$name" : $name;
+
+    my $pthx = $flags !~ /n/ && $Config::Config{usemultiplicity}
+        ? "\$my_perl,"
+        : "";
+
+    "#[macro_export] macro_rules! $name { (\$my_perl:expr, \$( \$arg:expr ),*) => { $perl_name($pthx \$( \$arg ),*) }}";
+}
+
 sub perl_funcs {
     my $perl = shift;
-    extern("C",
-        map(fn(@$_), @$perl));
+    (
+        extern("C",
+            map(fn(@$_), @$perl)),
+        map(perl_macro(@$_), @$perl),
+    );
 }
 
 sub ouro_funcs {
     my $spec = shift;
-    extern("C",
-        map(fn(@$_), @{$spec->{fn}}));
+    (
+        extern("C",
+            map(fn(@$_), @{$spec->{fn}})),
+        map(perl_macro(@$_), @{$spec->{fn}}),
+    );
 }
 
 sub ouro_consts {
@@ -373,7 +393,6 @@ my @perl;
         # va_list is useless in rust anyway
         next if grep /\bva_list\b/, $type, @args;
 
-        $name = "Perl_$name" if $flags =~ /p/;
         push @perl, [ $flags, $type, $name, @args ];
     }
 }
