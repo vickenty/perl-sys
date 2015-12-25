@@ -1,12 +1,54 @@
 extern crate gcc;
 
+use std::path::Path;
 use std::process::Command;
-use std::io::{ stderr, Write };
+
+struct Perl {
+    bin: String,
+}
+
+impl Perl {
+    fn new() -> Perl {
+        Perl {
+            bin: std::env::var("PERL").unwrap(),
+        }
+    }
+
+    fn cfg(&self, key: &str) -> String {
+        let out = Command::new(&self.bin)
+            .arg("-MConfig")
+            .arg("-e")
+            .arg(format!("print $Config::Config{{{}}}", key))
+            .output()
+            .unwrap();
+
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    fn run(&self, script: &str) {
+        Command::new(&self.bin)
+            .arg(script)
+            .status()
+            .unwrap();
+    }
+}
 
 fn main() {
-    let perl = std::env::var("PERL").unwrap();
+    let perl = Perl::new();
 
-    Command::new(perl).arg("build/regen.pl").status().unwrap();
+    let prefix = perl.cfg("archlibexp");
+    let perl_multi = perl.cfg("usemultiplicity");
 
-    gcc::compile_library("libouroboros.a", &[ "ouroboros/libouroboros.c" ]);
+    let perl_inc = Path::new(&prefix).join("CORE");
+
+    perl.run("build/regen.pl");
+
+    gcc::Config::new()
+        .file("ouroboros/libouroboros.c")
+        .include(&perl_inc)
+        .compile("libouroboros.a");
+
+    if perl_multi == "define" {
+        println!("cargo:rustc-cfg=perl_multiplicity");
+    }
 }
