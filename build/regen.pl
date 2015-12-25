@@ -302,7 +302,7 @@ sub perl_macro {
         ? "\$my_perl,"
         : "";
 
-    "#[macro_export] macro_rules! $name { (\$my_perl:expr, \$( \$arg:expr ),*) => { $perl_name($pthx \$( \$arg ),*) }}";
+    "#[macro_export] macro_rules! $name { (\$my_perl:expr, \$( \$arg:expr ),*) => { \$crate::raw::funcs::$perl_name($pthx \$( \$arg ),*) }}";
 }
 
 sub perl_funcs {
@@ -327,7 +327,7 @@ sub ouro_consts {
     my $spec = shift;
     mod("consts",
         "#![allow(non_upper_case_globals)]",
-        "use types::*;",
+        "use super::types::*;",
         map(const($_, const_value($_)), map $_->[1], @{$spec->{const}}));
 }
 
@@ -402,7 +402,7 @@ my @lines = (
     "",
     "#[macro_use]",
     mod("funcs",
-        "use types::*;",
+        "use super::types::*;",
         perl_funcs(\@perl),
         ouro_funcs(\%ouro)),
     "",
