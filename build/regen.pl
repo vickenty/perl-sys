@@ -2,8 +2,6 @@ use strict;
 use warnings;
 use autodie;
 
-use blib "ouroboros/blib";
-
 use Config;
 use Config::Perl::V;
 
