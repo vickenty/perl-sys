@@ -33,22 +33,30 @@ impl Perl {
     }
 }
 
+fn build_ouro(perl: &Perl) {
+    let mut gcc = gcc::Config::new();
+
+    let ccflags = perl.cfg("ccflags");
+    for flag in ccflags.split_whitespace() {
+        gcc.flag(flag);
+    }
+
+    let archlib = perl.cfg("archlibexp");
+    let coreinc = Path::new(&archlib).join("CORE");
+    gcc.include(&coreinc);
+
+    gcc.file("ouroboros/libouroboros.c");
+    gcc.compile("libouroboros.a");
+}
+
 fn main() {
     let perl = Perl::new();
 
-    let prefix = perl.cfg("archlibexp");
-    let perl_multi = perl.cfg("usemultiplicity");
-
-    let perl_inc = Path::new(&prefix).join("CORE");
+    build_ouro(&perl);
 
     perl.run("build/regen.pl");
 
-    gcc::Config::new()
-        .file("ouroboros/libouroboros.c")
-        .include(&perl_inc)
-        .compile("libouroboros.a");
-
-    if perl_multi == "define" {
+    if perl.cfg("usemultiplicity") == "define" {
         println!("cargo:rustc-cfg=perl_multiplicity");
     }
 }
