@@ -2,6 +2,7 @@ use strict;
 use warnings;
 use autodie;
 
+use B;
 use Config;
 use Config::Perl::V;
 
@@ -321,12 +322,13 @@ sub ouro_funcs {
     );
 }
 
+sub perl_consts {
+    map(const($_, eval "B::$_"), grep /^SV(?!t_)/, @B::EXPORT_OK);
+}
+
 sub ouro_consts {
     my $spec = shift;
-    mod("consts",
-        "#![allow(non_upper_case_globals)]",
-        "use super::types::*;",
-        map(const($_, const_value($_)), map $_->[1], @{$spec->{const}}));
+    map(const($_, const_value($_)), map $_->[1], @{$spec->{const}});
 }
 
 # Read libouroboros.txt
@@ -404,7 +406,11 @@ my @lines = (
         perl_funcs(\@perl),
         ouro_funcs(\%ouro)),
     "",
-    ouro_consts(\%ouro),
+    mod("consts",
+        "#![allow(non_upper_case_globals)]",
+        "use super::types::*;",
+        perl_consts(),
+        ouro_consts(\%ouro)),
 );
 
 open my $targ, ">", catfile(OUT_DIR, OUT_NAME);
