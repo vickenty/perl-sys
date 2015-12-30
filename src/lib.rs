@@ -70,9 +70,8 @@ impl<'a> XS<'a> {
 	}
 
 	pub fn push_string(&mut self, string: &str) {
-		let cstr = ffi::CString::new(string).unwrap();
 		unsafe {
-			ouroboros_stack_xpush_pv!(self.perl, &mut self.stack, cstr.as_ptr(), string.len() as STRLEN);
+			ouroboros_stack_xpush_pv!(self.perl, &mut self.stack, string.as_ptr() as *const i8, string.len() as STRLEN);
 		}
 	}
 
