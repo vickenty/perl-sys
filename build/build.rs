@@ -26,10 +26,11 @@ impl Perl {
     }
 
     fn run(&self, script: &str) {
-        Command::new(&self.bin)
+        let status = Command::new(&self.bin)
             .arg(script)
             .status()
             .unwrap();
+        assert!(status.success());
     }
 }
 
