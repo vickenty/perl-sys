@@ -15,6 +15,7 @@ use raw::types::*;
 pub struct XS<'a> {
     #[cfg(perl_multiplicity)]
 	perl: *mut PerlInterpreter,
+    #[allow(dead_code)]
     #[cfg(not(perl_multiplicity))]
     perl: (),
     #[allow(dead_code)]
@@ -42,7 +43,7 @@ impl<'a> XS<'a> {
 	}
 
 	#[cfg(not(perl_multiplicity))]
-	pub fn new(cv: *const CV) -> XS<'a> {
+	pub fn new(cv: *mut CV) -> XS<'a> {
         let stack = unsafe {
             let mut stack = mem::uninitialized();
             raw::funcs::ouroboros_stack_init(&mut stack);
@@ -50,7 +51,7 @@ impl<'a> XS<'a> {
         };
 
         XS {
-            perl: std::ptr::null_mut(),
+            perl: (),
             cv: cv,
             stack: stack,
             marker: ::std::marker::PhantomData,
