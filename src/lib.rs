@@ -11,13 +11,10 @@ pub mod raw {
 
 
 use raw::types::*;
+use raw::funcs::*;
 
 pub struct XS<'a> {
-    #[cfg(perl_multiplicity)]
-    perl: *mut PerlInterpreter,
-    #[allow(dead_code)]
-    #[cfg(not(perl_multiplicity))]
-    perl: (),
+    perl: PerlContext,
     #[allow(dead_code)]
     cv: *mut CV,
     stack: OuroborosStack,
@@ -25,9 +22,7 @@ pub struct XS<'a> {
 }
 
 impl<'a> XS<'a> {
-
-    #[cfg(perl_multiplicity)]
-    pub fn new(perl: *mut PerlInterpreter, cv: *mut CV) -> XS<'a> {
+    pub fn new(perl: PerlContext, cv: *mut CV) -> XS<'a> {
         let stack = unsafe {
             let mut stack = mem::uninitialized();
             raw::funcs::ouroboros_stack_init(perl, &mut stack);
@@ -42,50 +37,34 @@ impl<'a> XS<'a> {
         }
     }
 
-    #[cfg(not(perl_multiplicity))]
-    pub fn new(cv: *mut CV) -> XS<'a> {
-        let stack = unsafe {
-            let mut stack = mem::uninitialized();
-            raw::funcs::ouroboros_stack_init(&mut stack);
-            stack
-        };
-
-        XS {
-            perl: (),
-            cv: cv,
-            stack: stack,
-            marker: ::std::marker::PhantomData,
-        }
-    }
-
     pub fn prepush(&mut self) {
         unsafe {
-            ouroboros_stack_prepush!(self.perl, &mut self.stack);
+            ouroboros_stack_prepush(self.perl, &mut self.stack);
         }
     }
 
     pub fn push_long(&mut self, val: IV) {
         unsafe {
-            ouroboros_stack_xpush_iv!(self.perl, &mut self.stack, val);
+            ouroboros_stack_xpush_iv(self.perl, &mut self.stack, val);
         }
     }
 
     pub fn push_string(&mut self, string: &str) {
         unsafe {
-            ouroboros_stack_xpush_pv!(self.perl, &mut self.stack, string.as_ptr() as *const i8, string.len() as STRLEN);
+            ouroboros_stack_xpush_pv(self.perl, &mut self.stack, string.as_ptr() as *const i8, string.len() as STRLEN);
         }
     }
 
     pub fn putback(&mut self) {
         unsafe {
-            ouroboros_stack_putback!(self.perl, &mut self.stack);
+            ouroboros_stack_putback(self.perl, &mut self.stack);
         }
     }
 
     pub fn new_xs(&mut self, name: &str, xs: XSUBADDR_t, file: &'static [u8]) {
         let cname = ffi::CString::new(name).unwrap();
         unsafe {
-            newXS!(self.perl, cname.as_ptr(), xs, file.as_ptr() as *const c_char);
+            Perl_newXS(self.perl, cname.as_ptr(), xs, file.as_ptr() as *const c_char);
         }
     }
 }

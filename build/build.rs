@@ -56,8 +56,4 @@ fn main() {
     build_ouro(&perl);
 
     perl.run("build/regen.pl");
-
-    if perl.cfg("usemultiplicity") == "define" {
-        println!("cargo:rustc-cfg=perl_multiplicity");
-    }
 }

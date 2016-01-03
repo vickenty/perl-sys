@@ -171,8 +171,7 @@ sub _fn {
 
     my @formal;
 
-    push @formal, ($unnamed ? "" : "my_perl: ") . map_type("PerlInterpreter*")
-        if $genpthx && $Config::Config{usemultiplicity};
+    push @formal, ($unnamed ? "" : "my_perl: ") . "PerlContext" if $genpthx;
 
     my $argname = "arg0";
     foreach my $arg (@args) {
@@ -252,6 +251,16 @@ sub enum {
 
 # Output blocks
 
+sub pthx_type {
+    my $c = shift;
+
+    if ($c->{usemultiplicity}) {
+        return type("PerlContext", "*mut PerlInterpreter");
+    } else {
+        return ("#[derive(Clone,Copy)]", enum("PerlContext"));
+    }
+}
+
 sub perl_types {
     my $c = \%Config::Config;
     my $os = \%Ouroboros::Size;
@@ -260,6 +269,8 @@ sub perl_types {
         "#![allow(non_camel_case_types)]",
 
         map(enum($_), @{STUB_TYPES()}),
+
+        pthx_type($c),
 
         type("IV", map_type_size("IV", $c->{ivsize})),
         type("UV", map_type_size("UV", $c->{uvsize})),
@@ -292,24 +303,11 @@ sub perl_types {
     );
 }
 
-sub perl_macro {
-    my ($flags, undef, $name) = @_;
-
-    my $perl_name = $flags =~ /p/ ? "Perl_$name" : $name;
-
-    my $pthx = $flags !~ /n/ && $Config::Config{usemultiplicity}
-        ? "\$my_perl,"
-        : "";
-
-    "#[macro_export] macro_rules! $name { (\$my_perl:expr, \$( \$arg:expr ),*) => { \$crate::raw::funcs::$perl_name($pthx \$( \$arg ),*) }}";
-}
-
 sub perl_funcs {
     my $perl = shift;
     (
         extern("C",
             map(fn(@$_), @$perl)),
-        map(perl_macro(@$_), @$perl),
     );
 }
 
@@ -318,7 +316,6 @@ sub ouro_funcs {
     (
         extern("C",
             map(fn(@$_), @{$spec->{fn}})),
-        map(perl_macro(@$_), @{$spec->{fn}}),
     );
 }
 

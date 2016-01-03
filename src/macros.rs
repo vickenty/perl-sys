@@ -1,26 +1,11 @@
-#[cfg(perl_multiplicity)]
 #[macro_export]
 macro_rules! xs_proc {
     ($name:ident, $xs:ident, $body:block) => {
         #[allow(dead_code)]
         #[allow(non_snake_case)]
         #[no_mangle]
-        pub extern "C" fn $name(perl: *mut $crate::raw::types::PerlInterpreter, cv: *mut $crate::raw::types::CV) {
+        pub extern "C" fn $name(perl: $crate::raw::types::PerlContext, cv: *mut $crate::raw::types::CV) {
             let mut $xs = $crate::XS::new(perl, cv);
-            $body
-        }
-    }
-}
-
-#[cfg(not(perl_multiplicity))]
-#[macro_export]
-macro_rules! xs_proc {
-    ($name:ident, $xs:ident, $body:block) => {
-        #[allow(dead_code)]
-        #[allow(non_snake_case)]
-        #[no_mangle]
-        pub extern "C" fn $name(cv: *mut $crate::raw::types::CV) {
-            let mut $xs = $crate::XS::new(cv);
             $body
         }
     }
