@@ -327,8 +327,7 @@ sub perl_consts {
 }
 
 sub ouro_consts {
-    my $spec = shift;
-    map(const($_, const_value($_)), map $_->[1], @{$spec->{const}});
+    map(const($_, const_value($_)), @Ouroboros::CONSTS);
 }
 
 # Read libouroboros.txt
@@ -410,7 +409,7 @@ my @lines = (
         "#![allow(non_upper_case_globals)]",
         "use super::types::*;",
         perl_consts(),
-        ouro_consts(\%ouro)),
+        ouro_consts()),
 );
 
 open my $targ, ">", catfile(OUT_DIR, OUT_NAME);
