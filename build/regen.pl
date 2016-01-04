@@ -10,6 +10,8 @@ use Ouroboros;
 use File::Slurp qw/read_file write_file/;
 use File::Spec::Functions qw/catfile/;
 
+require "build/lib/version.pl" or die;
+
 use constant {
     EMBED_FNC_PATH => "build/embed.fnc",
     OURO_TXT_PATH => "ouroboros/libouroboros.txt",
@@ -337,10 +339,11 @@ foreach (read_file(OURO_TXT_PATH, chomp => 1)) {
 }
 
 # Read embed.fnc
+my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
 my @perl;
 {
     my $opts = Config::Perl::V::myconfig()->{options};
-    my @lines = read_file(EMBED_FNC_PATH, chomp => 1);
+    my @lines = read_file($embed_path, chomp => 1);
     my @scope = (1);
     while (defined ($_ = shift @lines)) {
         while (@lines && s/\\$/shift @lines/e) {}
@@ -394,6 +397,7 @@ my @perl;
 }
 
 my @lines = (
+    "/* Generated from $embed_path for Perl $Config::Config{version} */",
     perl_types(),
     "",
     "#[macro_use]",
