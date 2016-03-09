@@ -931,11 +931,11 @@ s	|void	|move_proto_attr|NN OP **proto|NN OP **attrs|NN const GV *name
 p	|int	|mode_from_discipline|NULLOK const char* s|STRLEN len
 Ap	|const char*	|moreswitches	|NN const char* s
 Ap	|NV	|my_atof	|NN const char *s
-#if (!defined(HAS_MEMCPY) && !defined(HAS_BCOPY)) || (!defined(HAS_MEMMOVE) && !defined(HAS_SAFE_MEMCPY) && !defined(HAS_SAFE_BCOPY))
-Anp	|char*	|my_bcopy	|NN const char* from|NN char* to|I32 len
+#if !defined(HAS_MEMCPY) || (!defined(HAS_MEMMOVE) && !defined(HAS_SAFE_MEMCPY))
+Anp	|void*	|my_bcopy	|NN const void* vfrom|NN void* vto|size_t len
 #endif
 #if !defined(HAS_BZERO) && !defined(HAS_MEMSET)
-Anp	|char*	|my_bzero	|NN char* loc|I32 len
+Anp	|void*	|my_bzero	|NN void* vloc|size_t len
 #endif
 Apr	|void	|my_exit	|U32 status
 Apr	|void	|my_failure_exit
@@ -946,10 +946,10 @@ Anp	|void	|atfork_unlock
 Apmb	|I32	|my_lstat
 pX	|I32	|my_lstat_flags	|NULLOK const U32 flags
 #if !defined(HAS_MEMCMP) || !defined(HAS_SANE_MEMCMP)
-AnpP	|I32	|my_memcmp	|NN const char* s1|NN const char* s2|I32 len
+AnpP	|int	|my_memcmp	|NN const void* vs1|NN const void* vs2|size_t len
 #endif
 #if !defined(HAS_MEMSET)
-Anp	|void*	|my_memset	|NN char* loc|I32 ch|I32 len
+Anp	|void*	|my_memset	|NN void* vloc|int ch|size_t len
 #endif
 #if !defined(PERL_IMPLICIT_SYS)
 Ap	|I32	|my_pclose	|NULLOK PerlIO* ptr
@@ -1526,10 +1526,12 @@ EiMRn	|UV	|invlist_max	|NN SV* const invlist
 EiM	|void	|invlist_set_len|NN SV* const invlist|const UV len|const bool offset
 EiMRn	|bool	|invlist_is_iterating|NN SV* const invlist
 #ifndef PERL_EXT_RE_BUILD
+EsM	|void	|invlist_replace_list_destroys_src|NN SV *dest|NN SV *src
 EiMRn	|IV*	|get_invlist_previous_index_addr|NN SV* invlist
 EiMn	|void	|invlist_set_previous_index|NN SV* const invlist|const IV index
 EiMRn	|IV	|invlist_previous_index|NN SV* const invlist
-EiMn	|void	|invlist_trim	|NN SV* const invlist
+EiMn	|void	|invlist_trim	|NN SV* invlist
+EiM	|void	|invlist_clear	|NN SV* invlist
 #endif
 EiMR	|SV*	|invlist_clone	|NN SV* const invlist
 EiMRn	|STRLEN*|get_invlist_iter_addr	|NN SV* invlist
@@ -2141,6 +2143,10 @@ Es	|void	 |set_ANYOF_arg	|NN RExC_state_t* const pRExC_state \
 				|NULLOK SV* const only_utf8_locale_list	   \
 				|NULLOK SV* const swash                    \
 				|const bool has_user_defined_property
+Es	|void	|output_or_return_posix_warnings			    \
+				|NN RExC_state_t *pRExC_state		    \
+				|NN AV* posix_warnings			    \
+				|NULLOK AV** return_posix_warnings
 Es	|AV*	 |add_multi_match|NULLOK AV* multi_char_matches		    \
 				|NN SV* multi_string			    \
 				|const STRLEN cp_count
@@ -2151,7 +2157,7 @@ Es	|regnode*|regclass	|NN RExC_state_t *pRExC_state                 \
 				|const bool strict                            \
 				|bool optimizable			      \
 				|NULLOK SV** ret_invlist		      \
-				|NULLOK AV** posix_warnings
+				|NULLOK AV** return_posix_warnings
 Es	|void|add_above_Latin1_folds|NN RExC_state_t *pRExC_state|const U8 cp \
 				|NN SV** invlist
 Ei	|regnode*|handle_named_backref|NN RExC_state_t *pRExC_state	    \
@@ -2243,7 +2249,8 @@ Es	|int	|handle_possible_posix					    \
 				|NN RExC_state_t *pRExC_state		    \
 				|NN const char* const s			    \
 				|NULLOK char ** updated_parse_ptr	    \
-				|NULLOK AV** posix_warnings
+				|NULLOK AV** posix_warnings		    \
+				|const bool check_only
 Es	|I32	|make_trie	|NN RExC_state_t *pRExC_state \
 				|NN regnode *startbranch|NN regnode *first \
 				|NN regnode *last|NN regnode *tail \
