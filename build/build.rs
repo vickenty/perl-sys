@@ -56,4 +56,8 @@ fn main() {
     build_ouro(&perl);
 
     perl.run("build/regen.pl");
+
+    if perl.cfg("useshrplib") == "true" {
+        println!("cargo:rustc-cfg=perl_useshrplib");
+    }
 }
