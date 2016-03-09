@@ -10,7 +10,7 @@ struct Perl {
 impl Perl {
     fn new() -> Perl {
         Perl {
-            bin: std::env::var("PERL").unwrap(),
+            bin: std::env::var("PERL").unwrap_or("perl".to_owned()),
         }
     }
 
