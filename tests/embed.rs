@@ -3,6 +3,7 @@ extern crate perl_sys;
 #[cfg(perl_useshrplib)]
 mod embedded {
     use std::{ mem, ptr, ffi };
+    use std::os::raw::c_int;
     use perl_sys;
     use perl_sys::funcs::*;
 
@@ -15,22 +16,26 @@ mod embedded {
 
     #[test]
     fn simple() {
+        let mut argc: c_int = 3;
         let mut argv: [*mut i8; 3] = [
             cstr!(""),
             cstr!("-e"),
             cstr!("0"),
         ];
+        let mut argvp = argv.as_mut_ptr();
+
+        let mut env: [*mut i8; 1] = [
+            ptr::null_mut(),
+        ];
+        let mut envp = env.as_mut_ptr();
 
         let iv = unsafe {
-            /* FIXME: missing PERL_SYS_INIT3 calls. */
+            ouroboros_sys_init3(&mut argc, &mut argvp, &mut envp);
+
             let perl = perl_alloc();
             let ctx = perl_sys::make_context(perl);
             perl_construct(perl);
-            perl_parse(perl,
-                       mem::transmute(0usize),
-                       3,
-                       &mut argv as *mut _ as *mut *mut i8,
-                       ptr::null_mut());
+            perl_parse(perl, mem::transmute(0usize), 3, argvp, envp);
 
             perl_run(perl);
 
