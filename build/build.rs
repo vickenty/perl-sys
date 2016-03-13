@@ -1,6 +1,6 @@
 extern crate gcc;
 
-use std::path::Path;
+use std::path::{ PathBuf, Path };
 use std::process::Command;
 
 struct Perl {
@@ -32,6 +32,11 @@ impl Perl {
             .unwrap();
         assert!(status.success());
     }
+
+    fn path_core(&self) -> PathBuf {
+        let archlib = self.cfg("archlibexp");
+        Path::new(&archlib).join("CORE")
+    }
 }
 
 fn build_ouro(perl: &Perl) {
@@ -42,9 +47,7 @@ fn build_ouro(perl: &Perl) {
         gcc.flag(flag);
     }
 
-    let archlib = perl.cfg("archlibexp");
-    let coreinc = Path::new(&archlib).join("CORE");
-    gcc.include(&coreinc);
+    gcc.include(&perl.path_core());
 
     gcc.file("ouroboros/libouroboros.c");
     gcc.compile("libouroboros.a");
@@ -63,5 +66,10 @@ fn main() {
 
     if perl.cfg("useshrplib") == "true" {
         println!("cargo:rustc-cfg=perl_useshrplib");
+
+        // Make sure ld links to libperl that matches current perl interpreter, instead of whatever
+        // is libperl version exists in default linker search path. $archlibexp/CORE is hard-coded
+        // installation path for default perl so this ought to be enough in most cases.
+        println!("cargo:rustc-link-search=native={}", perl.path_core().to_str().unwrap());
     }
 }
