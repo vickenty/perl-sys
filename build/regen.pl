@@ -7,6 +7,7 @@ use Config;
 use Config::Perl::V;
 
 use Ouroboros;
+use Ouroboros::Spec;
 use File::Slurp qw/read_file write_file/;
 use File::Spec::Functions qw/catfile/;
 
@@ -221,6 +222,13 @@ sub extern_fn {
     return _fn('extern "C"', "_", $type, "", @args);
 }
 
+sub ouro_fn {
+    my $fn = shift;
+    my $flags = "!";
+    $flags .= "n" unless $fn->{tags}{context};
+    return fn($flags, $fn->{type}, $fn->{name}, @{$fn->{params}});
+}
+
 sub const {
     my ($name, $value) = @_;
     return "pub const $name: IV = $value;";
@@ -317,7 +325,7 @@ sub ouro_funcs {
     my $spec = shift;
     (
         extern("C",
-            map(fn(@$_), @{$spec->{fn}})),
+            map(ouro_fn($_), @{$spec->{fn}})),
     );
 }
 
@@ -331,11 +339,10 @@ sub ouro_consts {
 
 # Read libouroboros.txt
 
-my %ouro;
-foreach (read_file(OURO_TXT_PATH, chomp => 1)) {
-    next if !$_ || /^#/;
-    my ($kind, @def) = split /\t/;
-    push @{$ouro{$kind}}, [ "!", @def ];
+my $ouro;
+{
+    open my $ouro_fh, "<", OURO_TXT_PATH;
+    $ouro = Ouroboros::Spec::parse_fh($ouro_fh);
 }
 
 # Read embed.fnc
@@ -404,7 +411,7 @@ my @lines = (
     mod("funcs",
         "use super::types::*;",
         perl_funcs(\@perl),
-        ouro_funcs(\%ouro)),
+        ouro_funcs($ouro)),
     "",
     mod("consts",
         "#![allow(non_upper_case_globals)]",
