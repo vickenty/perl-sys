@@ -57,6 +57,10 @@ fn main() {
 
     perl.run("build/regen.pl");
 
+    if perl.cfg("multiplicity") == "true" {
+        println!("cargo:rustc-cfg=perl_multiplicity");
+    }
+
     if perl.cfg("useshrplib") == "true" {
         println!("cargo:rustc-cfg=perl_useshrplib");
     }

@@ -3,6 +3,7 @@ extern crate perl_sys;
 #[cfg(perl_useshrplib)]
 mod embedded {
     use std::{ mem, ptr, ffi };
+    use perl_sys;
     use perl_sys::funcs::*;
 
     macro_rules! cstr {
@@ -23,6 +24,7 @@ mod embedded {
         let iv = unsafe {
             /* FIXME: missing PERL_SYS_INIT3 calls. */
             let perl = perl_alloc();
+            let ctx = perl_sys::make_context(perl);
             perl_construct(perl);
             perl_parse(perl,
                        mem::transmute(0usize),
@@ -32,9 +34,9 @@ mod embedded {
 
             perl_run(perl);
 
-            Perl_eval_pv(perl, cstr!("$foo = 6 * 7"), 1);
-            let sv = Perl_get_sv(perl, cstr!("foo"), 0);
-            let iv = ouroboros_sv_iv(perl, sv);
+            Perl_eval_pv(ctx, cstr!("$foo = 6 * 7"), 1);
+            let sv = Perl_get_sv(ctx, cstr!("foo"), 0);
+            let iv = ouroboros_sv_iv(ctx, sv);
 
             perl_free(perl);
 
