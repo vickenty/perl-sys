@@ -273,7 +273,7 @@ sub pthx_type {
 
 sub perl_types {
     my $c = \%Config::Config;
-    my $os = \%Ouroboros::Size;
+    my $os = \%Ouroboros::SIZE_OF;
 
     mod("types",
         "#![allow(non_camel_case_types)]",
@@ -337,13 +337,8 @@ sub ouro_consts {
     map(const($_, const_value($_)), @Ouroboros::CONSTS);
 }
 
-# Read libouroboros.txt
-
-my $ouro;
-{
-    open my $ouro_fh, "<", OURO_TXT_PATH;
-    $ouro = Ouroboros::Spec::parse_fh($ouro_fh);
-}
+# Ouroboros API.
+my $ouro = \%Ouroboros::Spec::SPEC;
 
 # Read embed.fnc
 my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
