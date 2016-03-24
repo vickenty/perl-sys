@@ -225,7 +225,7 @@ sub extern_fn {
 sub ouro_fn {
     my $fn = shift;
     my $flags = "!";
-    $flags .= "n" unless $fn->{tags}{context};
+    $flags .= "n" if $fn->{tags}{no_pthx};
     return fn($flags, $fn->{type}, $fn->{name}, @{$fn->{params}});
 }
 
