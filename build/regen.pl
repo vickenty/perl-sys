@@ -43,7 +43,7 @@ use constant {
     ],
 
     TYPEMAP => {
-        "ouroboros_stack_t" => "*mut OuroborosStack",
+        "ouroboros_stack_t" => "OuroborosStack",
 
         "void" => "::std::os::raw::c_void",
         "int" => "::std::os::raw::c_int",
