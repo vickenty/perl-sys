@@ -14,6 +14,6 @@ pub fn make_context(_my_perl: *mut types::PerlInterpreter) -> types::PerlContext
 fn test_svttype() {
     use consts::*;
     /* These relations are documented in perlguts */
-    assert!(consts::SVt_PVIV < SVt_PVAV);
-    assert!(consts::SVt_PVMG < SVt_PVAV);
+    assert!(SVt_PVIV < SVt_PVAV);
+    assert!(SVt_PVMG < SVt_PVAV);
 }
