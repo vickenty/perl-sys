@@ -275,9 +275,7 @@ sub perl_types {
     my $c = \%Config::Config;
     my $os = \%Ouroboros::SIZE_OF;
 
-    mod("types",
-        "#![allow(non_camel_case_types)]",
-
+    return (
         map(enum($_), @{STUB_TYPES()}),
 
         pthx_type($c),
@@ -400,7 +398,9 @@ my @perl;
 
 my @lines = (
     "/* Generated from $embed_path for Perl $Config::Config{version} */",
-    perl_types(),
+    mod("types",
+        "#![allow(non_camel_case_types)]",
+        perl_types()),
     "",
     "#[macro_use]",
     mod("funcs",
