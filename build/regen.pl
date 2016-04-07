@@ -19,6 +19,8 @@ use constant {
     OUT_DIR => $ENV{OUT_DIR} // ".",
     OUT_NAME => "perl_defs.rs",
 
+    PTHX_TYPE => "PerlThreadContext",
+
     STUB_TYPES => [
         "PerlInterpreter",
         "PerlIO",
@@ -174,7 +176,7 @@ sub _fn {
 
     my @formal;
 
-    push @formal, ($unnamed ? "" : "my_perl: ") . "PerlContext" if $genpthx;
+    push @formal, ($unnamed ? "" : "my_perl: ") . PTHX_TYPE if $genpthx;
 
     my $argname = "arg0";
     foreach my $arg (@args) {
@@ -265,9 +267,9 @@ sub pthx_type {
     my $c = shift;
 
     if ($c->{usemultiplicity}) {
-        return type("PerlContext", "*mut PerlInterpreter");
+        return type(PTHX_TYPE, "*mut PerlInterpreter");
     } else {
-        return ("#[derive(Clone,Copy)]", enum("PerlContext"));
+        return ("#[derive(Clone,Copy)]", enum(PTHX_TYPE));
     }
 }
 

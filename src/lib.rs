@@ -1,12 +1,12 @@
 include!(concat!(env!("OUT_DIR"), "/perl_defs.rs"));
 
 #[cfg(perl_multiplicity)]
-pub fn make_context(my_perl: *mut types::PerlInterpreter) -> types::PerlContext {
+pub fn make_context(my_perl: *mut types::PerlInterpreter) -> types::PerlThreadContext {
     my_perl
 }
 
 #[cfg(not(perl_multiplicity))]
-pub fn make_context(_my_perl: *mut types::PerlInterpreter) -> types::PerlContext {
+pub fn make_context(_my_perl: *mut types::PerlInterpreter) -> types::PerlThreadContext {
     unsafe { std::mem::transmute(()) }
 }
 
