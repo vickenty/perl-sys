@@ -46,6 +46,7 @@ use constant {
 
     TYPEMAP => {
         "ouroboros_stack_t" => "OuroborosStack",
+        "ouroboros_xcpt_callback_t" => "extern fn(*mut ::std::os::raw::c_void)",
 
         "void" => "::std::os::raw::c_void",
         "int" => "::std::os::raw::c_int",
