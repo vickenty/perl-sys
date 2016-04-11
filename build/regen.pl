@@ -173,7 +173,7 @@ sub _fn {
     my $genname = $flags =~ /!/;
     my $genpthx = $flags !~ /n/;
 
-    $name = $flags =~ /p/ ? "Perl_$name" : $name;
+    $name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
 
     my @formal;
 
@@ -385,12 +385,10 @@ my @perl;
             $flags =~ /A/ &&
             # documented
             $flags =~ /d/ &&
-            # not a macro
-            $flags !~ /m/ &&
-            # not for backwards compat
-            $flags !~ /b/
+            # not a macro without c function
+            !($flags =~ /m/ && $flags !~ /b/) &&
             # not experimental
-            && $flags !~ /M/;
+            $flags !~ /M/;
 
         # va_list is useless in rust anyway
         next if grep /\bva_list\b/, $type, @args;
