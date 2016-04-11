@@ -318,7 +318,7 @@ sub perl_funcs {
     my $perl = shift;
     (
         extern("C",
-            map(fn(@$_), @$perl)),
+            map(fn(@$_), sort { $a->[2] cmp $b->[2] } @$perl)),
     );
 }
 
@@ -326,7 +326,7 @@ sub ouro_funcs {
     my $spec = shift;
     (
         extern("C",
-            map(ouro_fn($_), @{$spec->{fn}})),
+            map(ouro_fn($_), sort { $a->{name} cmp $b->{name} } @{$spec->{fn}})),
     );
 }
 
