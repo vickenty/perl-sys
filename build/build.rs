@@ -25,6 +25,21 @@ impl Perl {
         String::from_utf8(out.stdout).unwrap()
     }
 
+    fn ouroboros_source(&self) -> Vec<String> {
+        let out = Command::new(&self.bin)
+            .arg("-MOuroboros::Library")
+            .arg("-e")
+            .arg("print \"$_\\n\" for Ouroboros::Library::c_source")
+            .output()
+            .unwrap();
+
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .lines()
+            .map(|l| l.to_owned())
+            .collect()
+    }
+
     fn run(&self, script: &str) {
         let status = Command::new(&self.bin)
             .arg(script)
@@ -49,7 +64,10 @@ fn build_ouro(perl: &Perl) {
 
     gcc.include(&perl.path_core());
 
-    gcc.file("ouroboros/libouroboros.c");
+    for file in perl.ouroboros_source() {
+        gcc.file(file);
+    }
+
     gcc.compile("libouroboros.a");
 }
 
