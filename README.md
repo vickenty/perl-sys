@@ -5,7 +5,7 @@ This package provides raw low-level bindings for Perl XS API.
 ## Dependencies
 
 * C compiler
-* Perl 5.20 or later
+* Perl 5.18 or later
 * Perl packages:
   * File::Slurp
   * Ouroboros
