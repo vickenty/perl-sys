@@ -177,7 +177,7 @@ sub _fn {
 
     my @formal;
 
-    push @formal, ($unnamed ? "" : "my_perl: ") . PTHX_TYPE if $genpthx;
+    push @formal, ($unnamed ? "" : "my_perl: ") . "*mut PerlInterpreter" if $genpthx && $Config{usemultiplicity};
 
     my $argname = "arg0";
     foreach my $arg (@args) {
@@ -270,7 +270,7 @@ sub pthx_type {
     if ($c->{usemultiplicity}) {
         return type(PTHX_TYPE, "*mut PerlInterpreter");
     } else {
-        return ("#[derive(Clone,Copy)]", enum(PTHX_TYPE));
+        return type(PTHX_TYPE, "()");
     }
 }
 

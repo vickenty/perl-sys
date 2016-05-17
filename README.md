@@ -31,6 +31,9 @@ This crate exports three modules:
 
 * `funcs` - contains function declarations.
 
+Also exported is `pthx!` macro which is used to handle varying function
+signatures between normal and threaded Perl builds.
+
 ## SvIV et al.
 
 Some essential endpoints in the XS API are implemented entirely as C
@@ -38,11 +41,3 @@ preprocessor macros. libouroboros provides wrappers for some of these macros,
 which are exported under their original library names. libouroboros is bundled
 with this crate, will be built automatically and statically linked into the
 final binary.
-
-## Multiplicity Perl
-
-Perl interpreter built with -DMULTIPLICITY passes an additional context
-parameter to all XS and most API functions. While in XS source this parameter
-is often hidden behind preprocessor macros, in Rust this parameter is passed
-explicitly and is required even on non-multiplicity builds to ensure source
-level compatibility between perl flavours.

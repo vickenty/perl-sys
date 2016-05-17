@@ -1,10 +1,10 @@
+#[macro_use]
 extern crate perl_sys;
 
 #[cfg(perl_useshrplib)]
 mod embedded {
     use std::{ mem, ptr, ffi };
     use std::os::raw::c_int;
-    use perl_sys;
     use perl_sys::funcs::*;
 
     macro_rules! cstr {
@@ -33,15 +33,14 @@ mod embedded {
             ouroboros_sys_init3(&mut argc, &mut argvp, &mut envp);
 
             let perl = perl_alloc();
-            let ctx = perl_sys::make_context(perl);
             perl_construct(perl);
             perl_parse(perl, mem::transmute(0usize), 3, argvp, envp);
 
             perl_run(perl);
 
-            Perl_eval_pv(ctx, cstr!("$foo = 6 * 7"), 1);
-            let sv = Perl_get_sv(ctx, cstr!("foo"), 0);
-            let iv = ouroboros_sv_iv(ctx, sv);
+            pthx!(Perl_eval_pv(perl, cstr!("$foo = 6 * 7"), 1));
+            let sv = pthx!(Perl_get_sv(perl, cstr!("foo"), 0));
+            let iv = pthx!(ouroboros_sv_iv(perl, sv));
 
             perl_free(perl);
 
