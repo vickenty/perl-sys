@@ -25,21 +25,6 @@ impl Perl {
         String::from_utf8(out.stdout).unwrap()
     }
 
-    fn ouroboros_source(&self) -> Vec<String> {
-        let out = Command::new(&self.bin)
-            .arg("-MOuroboros::Library")
-            .arg("-e")
-            .arg("print \"$_\\n\" for Ouroboros::Library::c_source")
-            .output()
-            .unwrap();
-
-        String::from_utf8(out.stdout)
-            .unwrap()
-            .lines()
-            .map(|l| l.to_owned())
-            .collect()
-    }
-
     fn run(&self, script: &str) {
         let status = Command::new(&self.bin)
             .arg(script)
@@ -54,29 +39,30 @@ impl Perl {
     }
 }
 
-fn build_ouro(perl: &Perl) {
+fn build(perl: &Perl) {
     let mut gcc = gcc::Config::new();
 
     let ccflags = perl.cfg("ccflags");
     for flag in ccflags.split_whitespace() {
         gcc.flag(flag);
     }
+    gcc.flag("-g");
+    gcc.flag("-finline-functions");
 
     gcc.include(&perl.path_core());
 
-    for file in perl.ouroboros_source() {
-        gcc.file(file);
-    }
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is set");
+    gcc.file(Path::new(&out_dir).join("perl_sys.c"));
 
-    gcc.compile("libouroboros.a");
+    gcc.compile("libperlsys.a");
 }
 
 fn main() {
     let perl = Perl::new();
 
-    build_ouro(&perl);
-
     perl.run("build/regen.pl");
+
+    build(&perl);
 
     if perl.cfg("usemultiplicity") == "define" {
         println!("cargo:rustc-cfg=perl_multiplicity");

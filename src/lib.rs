@@ -1,4 +1,4 @@
-include!(concat!(env!("OUT_DIR"), "/perl_defs.rs"));
+include!(concat!(env!("OUT_DIR"), "/perl_sys.rs"));
 
 #[cfg(perl_multiplicity)]
 #[macro_export]

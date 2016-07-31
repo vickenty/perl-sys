@@ -8,7 +8,8 @@ use Config::Perl::V;
 
 use Ouroboros;
 use Ouroboros::Spec;
-use File::Slurp qw/read_file write_file/;
+use Ouroboros::Library;
+use File::Slurp qw/read_file/;
 use File::Spec::Functions qw/catfile/;
 
 require "build/lib/version.pl" or die;
@@ -17,7 +18,6 @@ use constant {
     EMBED_FNC_PATH => "build/embed.fnc",
     OURO_TXT_PATH => "ouroboros/libouroboros.txt",
     OUT_DIR => $ENV{OUT_DIR} // ".",
-    OUT_NAME => "perl_defs.rs",
 
     PTHX_TYPE => "PerlThreadContext",
 
@@ -81,6 +81,74 @@ use constant {
     RUST_TYPE => "Rust",
 };
 
+my @no_wrapper_fn = (
+    "ouroboros_xcpt_try",
+    "ouroboros_xcpt_rethrow",
+);
+
+sub read_embed_fnc {
+    my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
+    my $opts = Config::Perl::V::myconfig()->{options};
+    my @lines = read_file($embed_path, chomp => 1);
+    my @scope = (1);
+    my @spec;
+    while (defined ($_ = shift @lines)) {
+        while (@lines && s/\\$/shift @lines/e) {}
+
+        next if !$_ || /^:/;
+
+        s/#\s*ifdef\s+(\w+)/#if defined($1)/;
+        s/#\s*ifndef\s+(\w+)/#if !defined($1)/;
+
+        if (my ($pp, $args) = /^#\s*(\w+)(.*)/) {
+            if ($pp eq "if") {
+                $args =~ s/defined\s*\([\w+]\)/\$opts->{$1}/;
+                unshift @scope, eval $args && $scope[0];
+            }
+            elsif ($pp eq "endif") {
+                die "unmatched #endif" if @scope < 2;
+                shift @scope;
+            }
+            elsif ($pp eq "else") {
+                $scope[0] = !$scope[0];
+            }
+            else {
+                die "unknown directive $pp";
+            }
+            next;
+        }
+
+        next unless $scope[0];
+
+        my ($flags, $type, $name, @args) = split /\s*\|\s*/;
+
+        ($type, @args) = map s/^\s+//r =~ s/\s+$//r, ($type, @args);
+
+        # perl volatile and nullability markers mean nothing here
+        ($type, @args) = map s/\b(?:VOL|NN|NULLOK)\b\s*//gr, ($type, @args);
+
+        next unless
+            # public
+            $flags =~ /A/ &&
+            # documented
+            $flags =~ /d/ &&
+            # not a macro without c function
+            !($flags =~ /m/ && $flags !~ /b/) &&
+            # not experimental
+            $flags !~ /M/;
+
+        # va_list is useless in rust anyway
+        next if grep /\bva_list\b/, $type, @args;
+
+        push @spec, [ $flags, $type, $name, @args ];
+    }
+
+    return \@spec;
+}
+
+my $perl_spec = read_embed_fnc();
+my $ouro_spec = \%Ouroboros::Spec::SPEC;
+
 # Getters
 
 sub map_type {
@@ -90,9 +158,6 @@ sub map_type {
 
     # working copy
     my $work = $type;
-
-    # perl volatile and nullability markers mean nothing here
-    $work =~ s/\b(?:VOL|NN|NULLOK)\b\s*//g;
 
     # canonicalize const placement, "const int" is the same as "int const"
     $work =~ s/const\s+(\w+)/$1 const/;
@@ -166,14 +231,17 @@ sub extern {
     );
 }
 
+sub link_name {
+    my ($name) = @_;
+    return (qq!#[link_name="$name"]!);
+}
+
 sub _fn {
     my ($qual, $flags, $type, $name, @args) = @_;
 
     my $unnamed = $flags =~ /_/;
     my $genname = $flags =~ /!/;
     my $genpthx = $flags !~ /n/;
-
-    $name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
 
     my @formal;
 
@@ -225,11 +293,34 @@ sub extern_fn {
     return _fn('extern "C"', "_", $type, "", @args);
 }
 
-sub ouro_fn {
+sub perl_fn {
+    my ($flags, $type, $name, @args) = @_;
+
+    unshift @args, "$type* RETVAL" if $type ne "void";
+
+    my $link_name = grep($_ eq "...", @args) ? "Perl_$name" : "perl_sys_$name";
+
+    return (
+        link_name($link_name),
+        fn($flags, "int", $name, @args));
+}
+
+sub ouro_flags {
     my $fn = shift;
     my $flags = "!";
     $flags .= "n" if $fn->{tags}{no_pthx};
-    return fn($flags, $fn->{type}, $fn->{name}, @{$fn->{params}});
+    return $flags;
+}
+
+sub ouro_fn {
+    my $fn = shift;
+
+    my @args = @{$fn->{params}};
+    unshift @args, "$fn->{type} *" if $fn->{type} ne "void";
+
+    return (
+        link_name("perl_sys_$fn->{name}"),
+        fn(ouro_flags($fn), "int", $fn->{name}, @args));
 }
 
 sub const {
@@ -262,26 +353,21 @@ sub enum {
     return "pub enum $name {}";
 }
 
+
 # Output blocks
-
-sub pthx_type {
-    my $c = shift;
-
-    if ($c->{usemultiplicity}) {
-        return type(PTHX_TYPE, "*mut PerlInterpreter");
-    } else {
-        return type(PTHX_TYPE, "()");
-    }
-}
 
 sub perl_types {
     my $c = \%Config::Config;
     my $os = \%Ouroboros::SIZE_OF;
 
+    my $pthx = $c->{usemultiplicity}
+        ? type(PTHX_TYPE, "*mut PerlInterpreter")
+        : type(PTHX_TYPE, "()");
+
     return (
         map(enum($_), @{STUB_TYPES()}),
 
-        pthx_type($c),
+        $pthx,
 
         type("IV", map_type_size("IV", $c->{ivsize})),
         type("UV", map_type_size("UV", $c->{uvsize})),
@@ -315,19 +401,13 @@ sub perl_types {
 }
 
 sub perl_funcs {
-    my $perl = shift;
-    (
-        extern("C",
-            map(fn(@$_), sort { $a->[2] cmp $b->[2] } @$perl)),
-    );
+    return extern("C",
+        map(perl_fn(@$_), sort { $a->[2] cmp $b->[2] } @$perl_spec));
 }
 
 sub ouro_funcs {
-    my $spec = shift;
-    (
-        extern("C",
-            map(ouro_fn($_), sort { $a->{name} cmp $b->{name} } @{$spec->{fn}})),
-    );
+    return extern("C",
+        map(ouro_fn($_), sort { $a->{name} cmp $b->{name} } @{$ouro_spec->{fn}})),
 }
 
 sub perl_consts {
@@ -338,83 +418,138 @@ sub ouro_consts {
     map(const($_, const_value($_)), @Ouroboros::CONSTS);
 }
 
-# Ouroboros API.
-my $ouro = \%Ouroboros::Spec::SPEC;
+sub xcpt_wrapper {
+    my ($flags, $type, $name, @params) = @_;
 
-# Read embed.fnc
-my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
-my @perl;
-{
-    my $opts = Config::Perl::V::myconfig()->{options};
-    my @lines = read_file($embed_path, chomp => 1);
-    my @scope = (1);
-    while (defined ($_ = shift @lines)) {
-        while (@lines && s/\\$/shift @lines/e) {}
+    my @args;
+    my @sign;
 
-        next if !$_ || /^:/;
-
-        s/#\s*ifdef\s+(\w+)/#if defined($1)/;
-        s/#\s*ifndef\s+(\w+)/#if !defined($1)/;
-
-        if (my ($pp, $args) = /^#\s*(\w+)(.*)/) {
-            if ($pp eq "if") {
-                $args =~ s/defined\s*\([\w+]\)/\$opts->{$1}/;
-                unshift @scope, eval $args && $scope[0];
-            }
-            elsif ($pp eq "endif") {
-                die "unmatched #endif" if @scope < 2;
-                shift @scope;
-            }
-            elsif ($pp eq "else") {
-                $scope[0] = !$scope[0];
-            }
-            else {
-                die "unknown directive $pp";
-            }
-            next;
-        }
-
-        next unless $scope[0];
-
-        my ($flags, $type, $name, @args) = split /\s*\|\s*/;
-
-        ($type, @args) = map s/^\s+//r =~ s/\s+$//r, ($type, @args);
-
-        next unless
-            # public
-            $flags =~ /A/ &&
-            # documented
-            $flags =~ /d/ &&
-            # not a macro without c function
-            !($flags =~ /m/ && $flags !~ /b/) &&
-            # not experimental
-            $flags !~ /M/;
-
-        # va_list is useless in rust anyway
-        next if grep /\bva_list\b/, $type, @args;
-
-        push @perl, [ $flags, $type, $name, @args ];
+    if (grep $_ eq "...", @params) {
+        warn "skipping over variadic function $name\n";
+        return ();
     }
+
+    if ($name eq "sv_nolocking") {
+        warn "skipping $name\n";
+        return ();
+    }
+
+    foreach my $param (@params) {
+        my ($type, $name) = $param =~ /(.*)\b(\w+)/;
+        push @sign, "$type $name";
+        push @args, $name;
+    }
+
+    my $store = "";
+    if ($type ne "void") {
+        unshift @sign, "$type* RETVAL";
+        $store = "*RETVAL = ";
+    }
+
+    local $SIG{__WARN__} = sub { die "$type $name @params: @_" };
+
+    my $wrapper_name = "perl_sys_$name";
+
+    my $genpthx = $flags !~ /n/ && $Config{usemultiplicity};
+    my $genperl = ($flags =~ /b/ || $flags =~ /o/) && $flags !~ /m/ && $flags =~ /p/;
+    my $genouro = $flags =~ /!/;
+
+    if ($genperl) {
+        $name = "Perl_$name";
+    }
+
+    my (@jmpenv_push, @jmpenv_pop);
+    if ($genpthx) {
+        unshift @sign, "pTHX";
+        unshift @args, "aTHX" if ($genperl || $genouro);
+    }
+
+    if ($flags !~ /n/ && !grep $_ eq $name, @no_wrapper_fn) {
+        @jmpenv_push = (
+            "dJMPENV;",
+            "JMPENV_PUSH(rc);",
+        );
+        @jmpenv_pop = (
+            "JMPENV_POP;",
+        );
+    }
+
+    die "$flags $name\n" if !$genouro && $name =~ /ouroboros/;
+
+    local $" = ", ";
+    (
+        "int $wrapper_name(@sign) {",
+        indent(
+            "int rc = 0;",
+            @jmpenv_push,
+            "if (rc == 0) { $store$name(@args); }",
+            @jmpenv_pop,
+            "return rc;",
+        ),
+        "}",
+    )
 }
 
-my @lines = (
-    "/* Generated from $embed_path for Perl $Config::Config{version} */",
-    mod("types",
-        "#![allow(non_camel_case_types)]",
-        perl_types()),
-    "",
-    "#[macro_use]",
-    mod("funcs",
-        "use super::types::*;",
-        perl_funcs(\@perl),
-        ouro_funcs($ouro)),
-    "",
-    mod("consts",
-        "#![allow(non_upper_case_globals)]",
-        "use super::types::*;",
-        perl_consts(),
-        ouro_consts()),
-);
+sub xcpt_wrapper_ouro {
+    my $fn = shift;
+    return () if $fn->{name} eq "ouroboros_xcpt_try";
+    my $pn = "a";
+    my @params = map { $_ . " " . $pn++ } @{$fn->{params}};
+    xcpt_wrapper(ouro_flags($fn), $fn->{type}, $fn->{name}, @params);
+}
 
-open my $targ, ">", catfile(OUT_DIR, OUT_NAME);
-$targ->print(map "$_\n", @lines);
+sub perl_wrappers {
+    map(xcpt_wrapper(@$_), @$perl_spec);
+}
+
+sub ouro_wrappers {
+    map(xcpt_wrapper_ouro($_), @{$ouro_spec->{fn}});
+}
+
+sub build_wrappers {
+    return (
+        "/* Generated for Perl $Config::Config{version} */",
+        q{#define PERL_NO_GET_CONTEXT},
+        q{#include "EXTERN.h"},
+        q{#include "perl.h"},
+        q{#include "XSUB.h"},
+        q{#define OUROBOROS_STATIC static},
+        map(qq{#include "$_"}, Ouroboros::Library::c_header()),
+        perl_wrappers(),
+        ouro_wrappers(),
+        map(qq{#include "$_"}, Ouroboros::Library::c_source()),
+    );
+}
+
+sub build_bindings {
+    return (
+        "/* Generated for Perl $Config::Config{version} */",
+        mod("types",
+            "#![allow(non_camel_case_types)]",
+            perl_types()),
+        "",
+        "#[macro_use]",
+        mod("funcs",
+            "use super::types::*;",
+            perl_funcs(),
+            ouro_funcs()),
+        "",
+        mod("consts",
+            "#![allow(non_upper_case_globals)]",
+            "use super::types::*;",
+            perl_consts(),
+            ouro_consts()),
+    );
+}
+
+#
+
+sub write_file {
+    my ($name, @lines) = @_;
+    open my $fh, ">", catfile(OUT_DIR, $name);
+    $fh->print(map "$_\n", @lines);
+    close $fh;
+}
+
+write_file("perl_sys.c", build_wrappers());
+write_file("perl_sys.rs", build_bindings());
