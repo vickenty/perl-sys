@@ -9,7 +9,6 @@ use Config::Perl::V;
 use Ouroboros;
 use Ouroboros::Spec;
 use Ouroboros::Library;
-use File::Slurp qw/read_file/;
 use File::Spec::Functions qw/catfile/;
 
 require "build/lib/version.pl" or die;
@@ -89,7 +88,7 @@ my @no_wrapper_fn = (
 sub read_embed_fnc {
     my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
     my $opts = Config::Perl::V::myconfig()->{options};
-    my @lines = read_file($embed_path, chomp => 1);
+    my @lines = read_file($embed_path);
     my @scope = (1);
     my @spec;
     while (defined ($_ = shift @lines)) {
@@ -543,6 +542,15 @@ sub build_bindings {
 }
 
 #
+
+sub read_file {
+    my ($name, %opts) = @_;
+    open my $fh, "<", $name;
+    my @lines = <$fh>;
+    close $fh;
+    chomp foreach @lines;
+    return @lines;
+}
 
 sub write_file {
     my ($name, @lines) = @_;

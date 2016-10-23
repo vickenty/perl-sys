@@ -7,7 +7,6 @@ This package provides raw low-level bindings for Perl XS API.
 * C compiler
 * Perl 5.18 or later
 * Perl packages:
-  * File::Slurp
   * Ouroboros
 
 ## Building

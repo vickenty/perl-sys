@@ -4,7 +4,6 @@ use strict;
 use warnings;
 use Getopt::Long;
 use File::Spec::Functions qw/catfile/;
-use File::Slurp qw/read_file write_file/;
 
 require "build/lib/version.pl" or die;
 
@@ -44,5 +43,6 @@ $latest{$blead_ver} = "blead";
 
 foreach my $apiver (keys %latest) {
     my $embed = `cd "$path" && git show "$latest{$apiver}:embed.fnc"`;
-    write_file("build/embed.fnc/$apiver", $embed);
+    open my $fh, ">", "build/embed.fnc/$apiver";
+    $fh->print($embed);
 }
