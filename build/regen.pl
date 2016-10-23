@@ -77,6 +77,10 @@ use constant {
         },
     },
 
+    BLACKLIST => {
+        "sv_nolocking" => "listed as part of public api, but not actually defined",
+    },
+
     RUST_TYPE => "Rust",
 };
 
@@ -430,8 +434,8 @@ sub xcpt_wrapper {
         return ();
     }
 
-    if ($name eq "sv_nolocking") {
-        warn "skipping $name\n";
+    if (my $reason = BLACKLIST->{$name}) {
+        warn "skipping blacklisted '$name': $reason\n";
         return ();
     }
 
