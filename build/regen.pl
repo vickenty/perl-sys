@@ -338,7 +338,7 @@ sub wrap_fn {
 
     return (
         link_name("perl_sys_$name"),
-        fn($flags, "int", $name, @args),
+        fn($flags, $type, $name, @args),
     );
 }
 
