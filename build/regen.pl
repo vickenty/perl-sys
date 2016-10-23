@@ -134,7 +134,9 @@ sub read_embed_fnc {
             # not a macro without c function
             !($flags =~ /m/ && $flags !~ /b/) &&
             # not experimental
-            $flags !~ /M/;
+            $flags !~ /M/ &&
+            # not deprecated
+            $flags !~ /D/;
 
         # va_list is useless in rust anyway
         next if grep /\bva_list\b/, $type, @args;
