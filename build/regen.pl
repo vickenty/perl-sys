@@ -151,7 +151,12 @@ sub read_embed_fnc {
         # va_list is useless in rust anyway
         next if grep /\bva_list\b/, $type, @args;
 
-        push @spec, [ $flags, $type, $name, @args ];
+        push @spec, {
+            flags => $flags,
+            type => $type,
+            name => $name,
+            args => \@args,
+        };
     }
 
     return \@spec;
@@ -305,13 +310,13 @@ sub extern_fn {
 }
 
 sub perl_fn {
-    my ($flags, $type, $name, @args) = @_;
+    my ($fn) = @_;
 
-    my $link_name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
+    my $link_name = $fn->{flags} =~ /[pb]/ ? "Perl_$fn->{name}" : $fn->{name};
 
     return (
         link_name($link_name),
-        fn($flags, $type, $name, @args),
+        fn($fn->{flags}, $fn->{type}, $fn->{name}, @{$fn->{args}}),
     );
 }
 
@@ -334,11 +339,11 @@ sub ouro_fn {
 }
 
 sub wrap_fn {
-    my ($flags, $type, $name, @args) = @_;
+    my ($fn) = @_;
 
     return (
-        link_name("perl_sys_$name"),
-        fn($flags, $type, $name, @args),
+        link_name("perl_sys_$fn->{name}"),
+        fn($fn->{flags}, $fn->{type}, $fn->{name}, @{$fn->{args}}),
     );
 }
 
@@ -419,20 +424,24 @@ sub perl_types {
     );
 }
 
+sub sort_by_name {
+    sort { $a->{name} cmp $b->{name} } @_
+}
+
 sub perl_funcs {
     return extern("C",
-        map(perl_fn(@$_), sort { $a->[2] cmp $b->[2] } @$perl_spec));
+        map(perl_fn($_), sort_by_name @$perl_spec));
 }
 
 sub ouro_funcs {
     return extern("C",
-        map(ouro_fn($_), sort { $a->{name} cmp $b->{name} } @{$ouro_spec->{fn}}));
+        map(ouro_fn($_), sort_by_name @{$ouro_spec->{fn}}));
 }
 
 sub wrap_funcs {
     my ($wrapper_defs) = @_;
     return extern("C",
-        map(wrap_fn(@$_), sort { $a->[2] cmp $b->[2] } @$wrapper_defs));
+        map(wrap_fn($_), sort_by_name @$wrapper_defs));
 }
 
 sub perl_consts {
@@ -534,7 +543,12 @@ sub xcpt_wrapper {
             ),
             "}",
         ],
-        def => [ "", "int", $name, @sign ],
+        def => {
+            flags => "",
+            type => "int",
+            name => $name,
+            args => \@sign,
+        },
     };
 }
 
@@ -547,7 +561,7 @@ sub xcpt_wrapper_ouro {
 }
 
 sub perl_wrappers {
-    map(xcpt_wrapper(@$_), @$perl_spec);
+    map(xcpt_wrapper($_->{flags}, $_->{type}, $_->{name}, @{$_->{args}}), @$perl_spec);
 }
 
 sub ouro_wrappers {
