@@ -81,13 +81,13 @@ use constant {
         "sv_nolocking" => "listed as part of public api, but not actually defined",
     },
 
+    NO_CATCH => {
+        "ouroboros_xcpt_try" => "captures perl croaks itself",
+        "ouroboros_xcpt_rethrow" => "has to be able to die",
+    },
+
     RUST_TYPE => "Rust",
 };
-
-my @no_wrapper_fn = (
-    "ouroboros_xcpt_try",
-    "ouroboros_xcpt_rethrow",
-);
 
 sub read_embed_fnc {
     my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
@@ -469,7 +469,7 @@ sub xcpt_wrapper {
         unshift @args, "aTHX" if ($genperl || $genouro);
     }
 
-    if ($flags !~ /n/ && !grep $_ eq $name, @no_wrapper_fn) {
+    unless ($flags =~ /n/ || NO_CATCH->{$name}) {
         @jmpenv_push = (
             "dJMPENV;",
             "JMPENV_PUSH(rc);",
