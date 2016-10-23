@@ -84,6 +84,12 @@ use constant {
     NO_CATCH => {
         "ouroboros_xcpt_try" => "captures perl croaks itself",
         "ouroboros_xcpt_rethrow" => "has to be able to die",
+        "croak" => "has to be able to die",
+    },
+
+    # Map from names of variadic functions to names of known equivalents taking va_list.
+    VARIADIC_IMPL => {
+        "croak" => "vcroak",
     },
 
     RUST_TYPE => "Rust",
@@ -440,23 +446,38 @@ sub ouro_consts {
 sub xcpt_wrapper {
     my ($flags, $type, $name, @params) = @_;
 
-    my @args;
-    my @sign;
-
-    if (grep $_ eq "...", @params) {
-        warn "skipping over variadic function $name\n";
-        return ();
-    }
-
     if (my $reason = BLACKLIST->{$name}) {
         warn "skipping blacklisted '$name': $reason\n";
         return ();
     }
 
+    my $impl = $name;
+
+    my (@args, @sign);
+    my (@va_list, @va_start, @va_end);
     foreach my $param (@params) {
-        my ($type, $name) = $param =~ /(.*)\b(\w+)/;
-        push @sign, "$type $name";
-        push @args, $name;
+        if ($param eq "...") {
+            $impl = VARIADIC_IMPL->{$name};
+            if (!$impl) {
+                warn "skipping variadic function '$name': va_list equivalent is not known";
+                return ();
+            }
+
+            my $va_name = "ap";
+            $va_name++ while (grep $_ eq $va_name, @args);
+
+            @va_list = "va_list $va_name;";
+            @va_start = "va_start($va_name, $args[-1]);";
+            @va_end = "va_end($va_name);";
+
+            push @sign, "...";
+            push @args, "&$va_name";
+        }
+        else {
+            my ($type, $name) = $param =~ /(.*)\b(\w+)/;
+            push @sign, "$type $name";
+            push @args, $name;
+        }
     }
 
     my $store = "";
@@ -474,7 +495,7 @@ sub xcpt_wrapper {
     my $genouro = $flags =~ /!/;
 
     if ($genperl) {
-        $name = "Perl_$name";
+        $impl = "Perl_$impl";
     }
 
     my @pthx;
@@ -503,9 +524,12 @@ sub xcpt_wrapper {
             "int $wrapper_name(@{[@pthx, @sign]}) {",
             indent(
                 "int rc = 0;",
+                @va_list,
+                @va_start,
                 @jmpenv_push,
-                "if (rc == 0) { $store$name(@args); }",
+                "if (rc == 0) { $store$impl(@args); }",
                 @jmpenv_pop,
+                @va_end,
                 "return rc;",
             ),
             "}",
