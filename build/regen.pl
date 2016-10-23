@@ -301,13 +301,12 @@ sub extern_fn {
 sub perl_fn {
     my ($flags, $type, $name, @args) = @_;
 
-    unshift @args, "$type* RETVAL" if $type ne "void";
-
-    my $link_name = grep($_ eq "...", @args) ? "Perl_$name" : "perl_sys_$name";
+    my $link_name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
 
     return (
         link_name($link_name),
-        fn($flags, "int", $name, @args));
+        fn($flags, $type, $name, @args),
+    );
 }
 
 sub ouro_flags {
@@ -326,6 +325,15 @@ sub ouro_fn {
     return (
         link_name("perl_sys_$fn->{name}"),
         fn(ouro_flags($fn), "int", $fn->{name}, @args));
+}
+
+sub wrap_fn {
+    my ($flags, $type, $name, @args) = @_;
+
+    return (
+        link_name("perl_sys_$name"),
+        fn($flags, "int", $name, @args),
+    );
 }
 
 sub const {
@@ -412,7 +420,13 @@ sub perl_funcs {
 
 sub ouro_funcs {
     return extern("C",
-        map(ouro_fn($_), sort { $a->{name} cmp $b->{name} } @{$ouro_spec->{fn}})),
+        map(ouro_fn($_), sort { $a->{name} cmp $b->{name} } @{$ouro_spec->{fn}}));
+}
+
+sub wrap_funcs {
+    my ($wrapper_defs) = @_;
+    return extern("C",
+        map(wrap_fn(@$_), sort { $a->[2] cmp $b->[2] } @$wrapper_defs));
 }
 
 sub perl_consts {
@@ -463,12 +477,13 @@ sub xcpt_wrapper {
         $name = "Perl_$name";
     }
 
-    my (@jmpenv_push, @jmpenv_pop);
+    my @pthx;
     if ($genpthx) {
-        unshift @sign, "pTHX";
+        @pthx = ("pTHX");
         unshift @args, "aTHX" if ($genperl || $genouro);
     }
 
+    my (@jmpenv_push, @jmpenv_pop);
     unless ($flags =~ /n/ || NO_CATCH->{$name}) {
         @jmpenv_push = (
             "dJMPENV;",
@@ -482,17 +497,21 @@ sub xcpt_wrapper {
     die "$flags $name\n" if !$genouro && $name =~ /ouroboros/;
 
     local $" = ", ";
-    (
-        "int $wrapper_name(@sign) {",
-        indent(
-            "int rc = 0;",
-            @jmpenv_push,
-            "if (rc == 0) { $store$name(@args); }",
-            @jmpenv_pop,
-            "return rc;",
-        ),
-        "}",
-    )
+
+    return {
+        source => [
+            "int $wrapper_name(@{[@pthx, @sign]}) {",
+            indent(
+                "int rc = 0;",
+                @jmpenv_push,
+                "if (rc == 0) { $store$name(@args); }",
+                @jmpenv_pop,
+                "return rc;",
+            ),
+            "}",
+        ],
+        def => [ "", "int", $name, @sign ],
+    };
 }
 
 sub xcpt_wrapper_ouro {
@@ -512,7 +531,11 @@ sub ouro_wrappers {
 }
 
 sub build_wrappers {
-    return (
+    my @perl_wrappers = perl_wrappers();
+    my @ouro_wrappers = ouro_wrappers();
+
+
+    my $src = [
         "/* Generated for Perl $Config::Config{version} */",
         q{#define PERL_NO_GET_CONTEXT},
         q{#include "EXTERN.h"},
@@ -520,13 +543,19 @@ sub build_wrappers {
         q{#include "XSUB.h"},
         q{#define OUROBOROS_STATIC static},
         map(qq{#include "$_"}, Ouroboros::Library::c_header()),
-        perl_wrappers(),
-        ouro_wrappers(),
+        "",
+        map(@{$_->{source}}, @perl_wrappers, @ouro_wrappers),
+        "",
         map(qq{#include "$_"}, Ouroboros::Library::c_source()),
-    );
+    ];
+
+    my $defs = [ map $_->{def}, @perl_wrappers, @ouro_wrappers ];
+
+    return ($src, $defs);
 }
 
 sub build_bindings {
+    my ($wrapper_defs) = @_;
     return (
         "/* Generated for Perl $Config::Config{version} */",
         mod("types",
@@ -534,10 +563,14 @@ sub build_bindings {
             perl_types()),
         "",
         "#[macro_use]",
-        mod("funcs",
+        mod("fn_bindings",
             "use super::types::*;",
             perl_funcs(),
             ouro_funcs()),
+        "",
+        mod("fn_wrappers",
+            "use super::types::*;",
+            wrap_funcs($wrapper_defs)),
         "",
         mod("consts",
             "#![allow(non_upper_case_globals)]",
@@ -565,5 +598,6 @@ sub write_file {
     close $fh;
 }
 
-write_file("perl_sys.c", build_wrappers());
-write_file("perl_sys.rs", build_bindings());
+my ($wrapper_src, $wrapper_defs) = build_wrappers();
+write_file("perl_sys.c", @$wrapper_src);
+write_file("perl_sys.rs", build_bindings($wrapper_defs));
