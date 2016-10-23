@@ -144,6 +144,13 @@
 :
 :         (currently no effect)
 :
+:   W  Add a _pDEPTH argument to function prototypes, and an _aDEPTH
+:      argument to the function calls. This means that under DEBUGGING
+:      a depth argument is added to the functions, which is used for
+:      example by the regex engine for debugging and trace output.
+:      A non DEBUGGING build will not pass the unused argument.
+:      Currently restricted to functions with at least one argument.
+:
 :   X  Explicitly exported:
 :
 :         add entry to the list of exported symbols, unless x or m
@@ -742,8 +749,39 @@ AmnpdRP	|bool	|is_invariant_string|NN const U8* const s|const STRLEN len
 AnpdD	|STRLEN	|is_utf8_char	|NN const U8 *s
 Abmnpd	|STRLEN	|is_utf8_char_buf|NN const U8 *buf|NN const U8 *buf_end
 AnipdP	|bool	|is_utf8_string	|NN const U8 *s|const STRLEN len
-Anpdmb	|bool	|is_utf8_string_loc|NN const U8 *s|const STRLEN len|NN const U8 **ep
-Anipd	|bool	|is_utf8_string_loclen|NN const U8 *s|const STRLEN len|NULLOK const U8 **ep|NULLOK STRLEN *el
+AnidP	|bool	|is_utf8_string_flags					    \
+		|NN const U8 *s|const STRLEN len|const U32 flags
+AnidP	|bool	|is_strict_utf8_string|NN const U8 *s|const STRLEN len
+AnidP	|bool	|is_c9strict_utf8_string|NN const U8 *s|const STRLEN len
+Anpdmb	|bool	|is_utf8_string_loc					    \
+		|NN const U8 *s|const STRLEN len|NN const U8 **ep
+Andm	|bool	|is_utf8_string_loc_flags				    \
+		|NN const U8 *s|const STRLEN len|NN const U8 **ep	    \
+		|const U32 flags
+Andm	|bool	|is_strict_utf8_string_loc				    \
+		|NN const U8 *s|const STRLEN len|NN const U8 **ep
+Andm	|bool	|is_c9strict_utf8_string_loc				    \
+		|NN const U8 *s|const STRLEN len|NN const U8 **ep
+Anipd	|bool	|is_utf8_string_loclen					    \
+		|NN const U8 *s|const STRLEN len|NULLOK const U8 **ep	    \
+		|NULLOK STRLEN *el
+Anid	|bool	|is_utf8_string_loclen_flags				    \
+		|NN const U8 *s|const STRLEN len|NULLOK const U8 **ep	    \
+		|NULLOK STRLEN *el|const U32 flags
+Anid	|bool	|is_strict_utf8_string_loclen				    \
+		|NN const U8 *s|const STRLEN len|NULLOK const U8 **ep	    \
+		|NULLOK STRLEN *el
+Anid	|bool	|is_c9strict_utf8_string_loclen				    \
+		|NN const U8 *s|const STRLEN len|NULLOK const U8 **ep	    \
+		|NULLOK STRLEN *el
+Amnd	|bool	|is_utf8_fixed_width_buf_flags				    \
+		|NN const U8 * const s|const STRLEN len|const U32 flags
+Amnd	|bool	|is_utf8_fixed_width_buf_loc_flags			    \
+		|NN const U8 * const s|const STRLEN len			    \
+		|NULLOK const U8 **ep|const U32 flags
+Anid	|bool	|is_utf8_fixed_width_buf_loclen_flags			    \
+		|NN const U8 * const s|const STRLEN len			    \
+		|NULLOK const U8 **ep|NULLOK STRLEN *el|const U32 flags
 AmndP	|bool	|is_utf8_valid_partial_char				    \
 		|NN const U8 * const s|NN const U8 * const e
 AnidP	|bool	|is_utf8_valid_partial_char_flags			    \
@@ -1197,7 +1235,7 @@ s	|void	|pidgone	|Pid_t pid|int status
 #endif
 : Used in perly.y
 p	|OP*	|pmruntime	|NN OP *o|NN OP *expr|NULLOK OP *repl \
-				|bool isreg|I32 floor
+				|UV flags|I32 floor
 #if defined(PERL_IN_OP_C)
 s	|OP*	|pmtrans	|NN OP* o|NN OP* expr|NN OP* repl
 #endif
@@ -1535,6 +1573,7 @@ Apd	|SV*	|sv_setref_pvn	|NN SV *const rv|NULLOK const char *const classname \
 				|NN const char *const pv|const STRLEN n
 Apd	|void	|sv_setpv	|NN SV *const sv|NULLOK const char *const ptr
 Apd	|void	|sv_setpvn	|NN SV *const sv|NULLOK const char *const ptr|const STRLEN len
+Apd	|char  *|sv_setpv_bufsize|NN SV *const sv|const STRLEN cur|const STRLEN len
 Xp	|void	|sv_sethek	|NN SV *const sv|NULLOK const HEK *const hek
 Apmdb	|void	|sv_setsv	|NN SV *dstr|NULLOK SV *sstr
 Apmdb	|void	|sv_taint	|NN SV* sv
@@ -1642,6 +1681,14 @@ ApdD	|UV	|to_utf8_case	|NN const U8 *p					\
 				|NN const char *normal|				\
 				NULLOK const char *special
 #if defined(PERL_IN_UTF8_C)
+inRP	|bool	|does_utf8_overflow|NN const U8 * const s|NN const U8 * e
+inRP	|bool	|is_utf8_overlong_given_start_byte_ok|NN const U8 * const s|const STRLEN len
+sMR	|char *	|unexpected_non_continuation_text			\
+		|NN const U8 * const s					\
+		|STRLEN print_len					\
+		|const STRLEN non_cont_byte_pos				\
+		|const STRLEN expect_len
+sM	|char *	|_byte_dump_string|NN const U8 * s|const STRLEN len
 s	|UV	|_to_utf8_case  |const UV uv1					\
 				|NN const U8 *p					\
 				|NN U8* ustrp					\
@@ -1698,7 +1745,15 @@ Amd	|UV	|utf8_to_uvchr_buf	|NN const U8 *s|NN const U8 *send|NULLOK STRLEN *retl
 ApdD	|UV	|utf8_to_uvuni_buf	|NN const U8 *s|NN const U8 *send|NULLOK STRLEN *retlen
 pM	|bool	|check_utf8_print	|NN const U8 *s|const STRLEN len
 
-Adp	|UV	|utf8n_to_uvchr	|NN const U8 *s|STRLEN curlen|NULLOK STRLEN *retlen|U32 flags
+Adop	|UV	|utf8n_to_uvchr	|NN const U8 *s				    \
+				|STRLEN curlen				    \
+				|NULLOK STRLEN *retlen			    \
+				|const U32 flags
+Adp	|UV	|utf8n_to_uvchr_error|NN const U8 *s			    \
+				|STRLEN curlen				    \
+				|NULLOK STRLEN *retlen			    \
+				|const U32 flags			    \
+				|NULLOK U32 * errors
 AipnR	|UV	|valid_utf8_to_uvchr	|NN const U8 *s|NULLOK STRLEN *retlen
 Ap	|UV	|utf8n_to_uvuni|NN const U8 *s|STRLEN curlen|NULLOK STRLEN *retlen|U32 flags
 
@@ -2209,6 +2264,12 @@ Es	|regnode*|handle_regex_sets|NN RExC_state_t *pRExC_state \
 				|NULLOK SV ** return_invlist            \
 				|NN I32 *flagp|U32 depth                \
 				|NN char * const oregcomp_parse
+#if defined(DEBUGGING) && defined(ENABLE_REGEX_SETS_DEBUGGING)
+Es	|void	|dump_regex_sets_structures				    \
+				|NN RExC_state_t *pRExC_state		    \
+				|NN AV * stack				    \
+				|const IV fence|NN AV * fence_stack
+#endif
 Es	|void|parse_lparen_question_flags|NN RExC_state_t *pRExC_state
 Es	|regnode*|reg_node	|NN RExC_state_t *pRExC_state|U8 op
 Es	|regnode*|regpiece	|NN RExC_state_t *pRExC_state \
@@ -2348,21 +2409,20 @@ Es	|U8	|regtail_study	|NN RExC_state_t *pRExC_state \
 ERs	|bool	|isFOO_lc	|const U8 classnum|const U8 character
 ERs	|bool	|isFOO_utf8_lc	|const U8 classnum|NN const U8* character
 ERs	|SSize_t|regmatch	|NN regmatch_info *reginfo|NN char *startpos|NN regnode *prog
-ERs	|I32	|regrepeat	|NN regexp *prog|NN char **startposp \
+WERs	|I32	|regrepeat	|NN regexp *prog|NN char **startposp \
 				|NN const regnode *p \
 				|NN regmatch_info *const reginfo \
-				|I32 max \
-				|int depth
+				|I32 max
 ERs	|bool	|regtry		|NN regmatch_info *reginfo|NN char **startposp
 ERs	|bool	|reginclass	|NULLOK regexp * const prog  \
 				|NN const regnode * const n  \
 				|NN const U8 * const p       \
 				|NN const U8 * const p_end   \
 				|bool const utf8_target
-Es	|CHECKPOINT|regcppush	|NN const regexp *rex|I32 parenfloor\
+WEs	|CHECKPOINT|regcppush	|NN const regexp *rex|I32 parenfloor\
 				|U32 maxopenparen
-Es	|void	|regcppop	|NN regexp *rex\
-				|NN U32 *maxopenparen_p
+WEs	|void	|regcppop	|NN regexp *rex|NN U32 *maxopenparen_p
+WEs	|void	|regcp_restore	|NN regexp *rex|I32 ix|NN U32 *maxopenparen_p
 ERsn	|U8*	|reghop3	|NN U8 *s|SSize_t off|NN const U8 *lim
 ERsn	|U8*	|reghop4	|NN U8 *s|SSize_t off|NN const U8 *llim \
 				|NN const U8 *rlim
