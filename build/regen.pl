@@ -15,7 +15,6 @@ require "build/lib/version.pl" or die;
 
 use constant {
     EMBED_FNC_PATH => "build/embed.fnc",
-    OURO_TXT_PATH => "ouroboros/libouroboros.txt",
     OUT_DIR => $ENV{OUT_DIR} // ".",
 
     PTHX_TYPE => "PerlThreadContext",
