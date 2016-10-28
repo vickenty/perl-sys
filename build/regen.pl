@@ -94,6 +94,21 @@ use constant {
     RUST_TYPE => "Rust",
 };
 
+sub parse_argument {
+    my ($arg) = @_;
+
+    if ($arg eq "...") {
+        return [ "..." ];
+    }
+
+    my ($type, $name) = $arg =~ /(.*)\b(\w+)/ or die "unparsable argument '$arg'";
+    $type =~ s/\s+$//;
+
+    $name =~ s/^/a_/ if $name =~ /^(?:type|fn|unsafe|let|loop|ref)$/;
+
+    return [ $type, $name ];
+}
+
 sub read_embed_fnc {
     my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
     my $opts = Config::Perl::V::myconfig()->{options};
@@ -135,6 +150,8 @@ sub read_embed_fnc {
         # perl volatile and nullability markers mean nothing here
         ($type, @args) = map s/\b(?:VOL|NN|NULLOK)\b\s*//gr, ($type, @args);
 
+        @args = map parse_argument($_), @args;
+
         next unless
             # public
             $flags =~ /A/ &&
@@ -148,7 +165,7 @@ sub read_embed_fnc {
             $flags !~ /D/;
 
         # va_list is useless in rust anyway
-        next if grep /\bva_list\b/, $type, @args;
+        next if grep $_->[0] =~ /\bva_list\b/, @args;
 
         my $link_name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
 
@@ -184,7 +201,7 @@ sub read_ouro_spec {
     my @fns;
     foreach my $fn (@{$spec->{fn}}) {
         my $name = "arg0";
-        my @args = map "$_ " . $name++, @{$fn->{params}};
+        my @args = map [ $_,  $name++ ], @{$fn->{params}};
 
         push @fns, {
             type => $fn->{type},
@@ -297,19 +314,13 @@ sub _fn {
     push @formal, "my_perl: *mut PerlInterpreter" if $fn->{take_pthx} && $Config{usemultiplicity};
 
     foreach my $arg (@{$fn->{args}}) {
-        if ($arg eq "...") {
-            push @formal, $arg;
+        my ($type, $name) = @$arg;
+        if ($type eq "...") {
+            push @formal, "...";
         }
         else {
-            my ($type, $name);
-
-            ($type, $name) = $arg =~ /(.*)\b(\w+)/;
-
-            $name =~ s/^/a_/ if $name =~ /^(?:type|fn|unsafe|let|loop|ref)$/;
-
             my $rs_type = map_type($type);
-
-            push @formal, sprintf "%s: %s", $name, $rs_type;
+            push @formal, $name ? "$name: $rs_type" : $rs_type;
         }
     }
 
@@ -330,7 +341,7 @@ sub extern_fn {
     return _fn('extern "C"', {
         type => $type,
         name => "",
-        args => \@args,
+        args => [ map [ $_ ], @args ],
         take_pthx => 1,
     });
 }
@@ -412,10 +423,10 @@ sub perl_types {
         type("Optype", map_type_size("UV", $os->{Optype})),
 
         type("XSINIT_t", extern_fn("void")),
-        type("SVCOMPARE_t", extern_fn("I32", "SV* a", "SV* b")),
-        type("XSUBADDR_t", extern_fn("void", "CV* cv")),
-        type("Perl_call_checker", extern_fn("OP*", "OP* op", "GV* gv", "SV* sv")),
-        type("Perl_check_t", extern_fn("OP*", "OP* op")),
+        type("SVCOMPARE_t", extern_fn("I32", "SV*", "SV*")),
+        type("XSUBADDR_t", extern_fn("void", "CV*")),
+        type("Perl_call_checker", extern_fn("OP*", "OP*", "GV*", "SV*")),
+        type("Perl_check_t", extern_fn("OP*", "OP*")),
 
         struct("OuroborosStack", _data => ty sprintf("[u8; %d]", $os->{"ouroboros_stack_t"})),
     );
@@ -455,10 +466,14 @@ sub xcpt_wrapper {
 
     my $impl = $fn->{call_name};
 
-    my (@args, @sign);
+    my (@args, @formal);
     my (@va_list, @va_start, @va_end);
-    foreach my $param (@{$fn->{args}}) {
-        if ($param eq "...") {
+    foreach my $arg (@{$fn->{args}}) {
+        my ($type, $name) = @$arg;
+
+        push @formal, $arg;
+
+        if ($type eq "...") {
             $impl = VARIADIC_IMPL->{$fn->{name}};
 
             if (!$impl) {
@@ -473,19 +488,16 @@ sub xcpt_wrapper {
             @va_start = "va_start($va_name, $args[-1]);";
             @va_end = "va_end($va_name);";
 
-            push @sign, "...";
             push @args, "&$va_name";
         }
         else {
-            my ($type, $name) = $param =~ /(.*)\b(\w+)/;
-            push @sign, "$type $name";
             push @args, $name;
         }
     }
 
     my $store = "";
     if ($fn->{type} ne "void") {
-        unshift @sign, "$fn->{type}* RETVAL";
+        unshift @formal, [ "$fn->{type}*",  "RETVAL" ];
         $store = "*RETVAL = ";
     }
 
@@ -513,9 +525,11 @@ sub xcpt_wrapper {
 
     local $" = ", ";
 
+    my $formal = join ", ", @pthx, map join(" ", @$_), @formal;
+
     return {
         source => [
-            "int $wrapper_name(@{[@pthx, @sign]}) {",
+            "int $wrapper_name($formal) {",
             indent(
                 "int rc = 0;",
                 @va_list,
@@ -531,7 +545,7 @@ sub xcpt_wrapper {
         def => {
             %$fn,
             type => "int",
-            args => \@sign,
+            args => \@formal,
             link_name => $wrapper_name,
         },
     };
