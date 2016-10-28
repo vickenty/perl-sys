@@ -1,5 +1,5 @@
 use strict;
-use warnings;
+use warnings FATAL => "all";
 use autodie;
 
 use B;
@@ -150,19 +150,57 @@ sub read_embed_fnc {
         # va_list is useless in rust anyway
         next if grep /\bva_list\b/, $type, @args;
 
+        my $link_name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
+
+        my $call_name = $name;
+        my $pass_pthx;
+
+        # If function has Perl_$name implementation, but no friendly $name macro.
+        if ($flags =~ /p/ && $flags =~ /o/ && $flags !~ /m/) {
+            $call_name = "Perl_$name";
+            $pass_pthx = 1;
+        }
+
+
         push @spec, {
-            flags => $flags,
             type => $type,
             name => $name,
             args => \@args,
+
+            link_name => $link_name,
+            call_name => $call_name,
+
+            take_pthx => $flags !~ /n/,
+            pass_pthx => $pass_pthx,
         };
     }
 
-    return \@spec;
+    return @spec;
 }
 
-my $perl_spec = read_embed_fnc();
-my $ouro_spec = \%Ouroboros::Spec::SPEC;
+sub read_ouro_spec {
+    my $spec = \%Ouroboros::Spec::SPEC;
+
+    my @fns;
+    foreach my $fn (@{$spec->{fn}}) {
+        my $name = "arg0";
+        my @args = map "$_ " . $name++, @{$fn->{params}};
+
+        push @fns, {
+            type => $fn->{type},
+            name => $fn->{name},
+            args => \@args,
+
+            link_name => $fn->{name},
+            call_name => $fn->{name},
+
+            take_pthx => !$fn->{tags}{no_pthx},
+            pass_pthx => !$fn->{tags}{no_pthx},
+        };
+    }
+
+    return @fns;
+}
 
 # Getters
 
@@ -252,50 +290,34 @@ sub link_name {
 }
 
 sub _fn {
-    my ($qual, $flags, $type, $name, @args) = @_;
-
-    my $unnamed = $flags =~ /_/;
-    my $genname = $flags =~ /!/;
-    my $genpthx = $flags !~ /n/;
+    my ($qual, $fn) = @_;
 
     my @formal;
 
-    push @formal, ($unnamed ? "" : "my_perl: ") . "*mut PerlInterpreter" if $genpthx && $Config{usemultiplicity};
+    push @formal, "my_perl: *mut PerlInterpreter" if $fn->{take_pthx} && $Config{usemultiplicity};
 
-    my $argname = "arg0";
-    foreach my $arg (@args) {
+    foreach my $arg (@{$fn->{args}}) {
         if ($arg eq "...") {
             push @formal, $arg;
         }
         else {
             my ($type, $name);
 
-            if ($genname || $unnamed) {
-                $type = $arg;
-                $name = undef;
-            }
-            else {
-                ($type, $name) = $arg =~ /(.*)\b(\w+)/;
-                $name =~ s/^/a_/ if $name =~ /^(?:type|fn|unsafe|let|loop|ref)$/;
-            }
+            ($type, $name) = $arg =~ /(.*)\b(\w+)/;
 
-            $name = $argname++ if !$name && $genname;
+            $name =~ s/^/a_/ if $name =~ /^(?:type|fn|unsafe|let|loop|ref)$/;
 
             my $rs_type = map_type($type);
 
-            if ($unnamed) {
-                push @formal, $rs_type;
-            } else {
-                push @formal, sprintf "%s: %s", $name, $rs_type;
-            }
+            push @formal, sprintf "%s: %s", $name, $rs_type;
         }
     }
 
-    my $returns = $type eq "void" ? "" : " -> " . map_type($type);
+    my $returns = $fn->{type} eq "void" ? "" : " -> " . map_type($fn->{type});
 
     local $" = ", ";
 
-    return "$qual fn $name(@formal)$returns";
+    return "$qual fn $fn->{name}(@formal)$returns";
 }
 
 sub fn {
@@ -305,44 +327,20 @@ sub fn {
 sub extern_fn {
     my ($type, @args) = @_;
 
-    return _fn('extern "C"', "_", $type, "", @args);
+    return _fn('extern "C"', {
+        type => $type,
+        name => "",
+        args => \@args,
+        take_pthx => 1,
+    });
 }
 
-sub perl_fn {
-    my ($fn) = @_;
-
-    my $link_name = $fn->{flags} =~ /[pb]/ ? "Perl_$fn->{name}" : $fn->{name};
-
-    return (
-        link_name($link_name),
-        fn($fn->{flags}, $fn->{type}, $fn->{name}, @{$fn->{args}}),
-    );
-}
-
-sub ouro_flags {
-    my $fn = shift;
-    my $flags = "!";
-    $flags .= "n" if $fn->{tags}{no_pthx};
-    return $flags;
-}
-
-sub ouro_fn {
-    my $fn = shift;
-
-    my @args = @{$fn->{params}};
-    unshift @args, "$fn->{type} *" if $fn->{type} ne "void";
-
-    return (
-        link_name("perl_sys_$fn->{name}"),
-        fn(ouro_flags($fn), "int", $fn->{name}, @args));
-}
-
-sub wrap_fn {
+sub linked_fn {
     my ($fn) = @_;
 
     return (
-        link_name("perl_sys_$fn->{name}"),
-        fn($fn->{flags}, $fn->{type}, $fn->{name}, @{$fn->{args}}),
+        link_name($fn->{link_name}),
+        fn($fn),
     );
 }
 
@@ -414,10 +412,10 @@ sub perl_types {
         type("Optype", map_type_size("UV", $os->{Optype})),
 
         type("XSINIT_t", extern_fn("void")),
-        type("SVCOMPARE_t", extern_fn("I32", "SV*", "SV*")),
-        type("XSUBADDR_t", extern_fn("void", "CV*")),
-        type("Perl_call_checker", extern_fn("OP*", "OP*", "GV*", "GV*")),
-        type("Perl_check_t", extern_fn("OP*", "OP*")),
+        type("SVCOMPARE_t", extern_fn("I32", "SV* a", "SV* b")),
+        type("XSUBADDR_t", extern_fn("void", "CV* cv")),
+        type("Perl_call_checker", extern_fn("OP*", "OP* op", "GV* gv", "SV* sv")),
+        type("Perl_check_t", extern_fn("OP*", "OP* op")),
 
         struct("OuroborosStack", _data => ty sprintf("[u8; %d]", $os->{"ouroboros_stack_t"})),
     );
@@ -427,20 +425,16 @@ sub sort_by_name {
     sort { $a->{name} cmp $b->{name} } @_
 }
 
-sub perl_funcs {
+sub link_funcs {
+    my ($functions) = @_;
     return extern("C",
-        map(perl_fn($_), sort_by_name @$perl_spec));
-}
-
-sub ouro_funcs {
-    return extern("C",
-        map(ouro_fn($_), sort_by_name @{$ouro_spec->{fn}}));
+        map(linked_fn($_), sort_by_name @$functions));
 }
 
 sub wrap_funcs {
     my ($wrapper_defs) = @_;
     return extern("C",
-        map(wrap_fn($_), sort_by_name @$wrapper_defs));
+        map(linked_fn($_), sort_by_name @$wrapper_defs));
 }
 
 sub perl_consts {
@@ -452,22 +446,23 @@ sub ouro_consts {
 }
 
 sub xcpt_wrapper {
-    my ($flags, $type, $name, @params) = @_;
+    my ($fn) = @_;
 
-    if (my $reason = BLACKLIST->{$name}) {
-        warn "skipping blacklisted '$name': $reason\n";
+    if (my $reason = BLACKLIST->{$fn->{name}}) {
+        warn "skipping blacklisted '$fn->{name}': $reason\n";
         return ();
     }
 
-    my $impl = $name;
+    my $impl = $fn->{call_name};
 
     my (@args, @sign);
     my (@va_list, @va_start, @va_end);
-    foreach my $param (@params) {
+    foreach my $param (@{$fn->{args}}) {
         if ($param eq "...") {
-            $impl = VARIADIC_IMPL->{$name};
+            $impl = VARIADIC_IMPL->{$fn->{name}};
+
             if (!$impl) {
-                warn "skipping variadic function '$name': va_list equivalent is not known";
+                warn "skipping variadic function '$fn->{name}': va_list equivalent is not known";
                 return ();
             }
 
@@ -489,31 +484,24 @@ sub xcpt_wrapper {
     }
 
     my $store = "";
-    if ($type ne "void") {
-        unshift @sign, "$type* RETVAL";
+    if ($fn->{type} ne "void") {
+        unshift @sign, "$fn->{type}* RETVAL";
         $store = "*RETVAL = ";
     }
 
-    local $SIG{__WARN__} = sub { die "$type $name @params: @_" };
-
-    my $wrapper_name = "perl_sys_$name";
-
-    my $genpthx = $flags !~ /n/ && $Config{usemultiplicity};
-    my $genperl = ($flags =~ /b/ || $flags =~ /o/) && $flags !~ /m/ && $flags =~ /p/;
-    my $genouro = $flags =~ /!/;
-
-    if ($genperl) {
-        $impl = "Perl_$impl";
-    }
+    my $wrapper_name = "perl_sys_$fn->{name}";
 
     my @pthx;
-    if ($genpthx) {
+    if ($fn->{take_pthx} && $Config{usemultiplicity}) {
         @pthx = ("pTHX");
-        unshift @args, "aTHX" if ($genperl || $genouro);
+    }
+
+    if ($fn->{pass_pthx} && $Config{usemultiplicity}) {
+        unshift @args, "aTHX";
     }
 
     my (@jmpenv_push, @jmpenv_pop);
-    unless ($flags =~ /n/ || NO_CATCH->{$name}) {
+    if ($fn->{take_pthx} && !NO_CATCH->{$fn->{name}}) {
         @jmpenv_push = (
             "dJMPENV;",
             "JMPENV_PUSH(rc);",
@@ -522,8 +510,6 @@ sub xcpt_wrapper {
             "JMPENV_POP;",
         );
     }
-
-    die "$flags $name\n" if !$genouro && $name =~ /ouroboros/;
 
     local $" = ", ";
 
@@ -543,34 +529,17 @@ sub xcpt_wrapper {
             "}",
         ],
         def => {
-            flags => "",
+            %$fn,
             type => "int",
-            name => $name,
             args => \@sign,
+            link_name => $wrapper_name,
         },
     };
 }
 
-sub xcpt_wrapper_ouro {
-    my $fn = shift;
-    return () if $fn->{name} eq "ouroboros_xcpt_try";
-    my $pn = "a";
-    my @params = map { $_ . " " . $pn++ } @{$fn->{params}};
-    xcpt_wrapper(ouro_flags($fn), $fn->{type}, $fn->{name}, @params);
-}
-
-sub perl_wrappers {
-    map(xcpt_wrapper($_->{flags}, $_->{type}, $_->{name}, @{$_->{args}}), @$perl_spec);
-}
-
-sub ouro_wrappers {
-    map(xcpt_wrapper_ouro($_), @{$ouro_spec->{fn}});
-}
-
 sub build_wrappers {
-    my @perl_wrappers = perl_wrappers();
-    my @ouro_wrappers = ouro_wrappers();
-
+    my ($functions) = @_;
+    my @wrappers = map(xcpt_wrapper($_), @$functions);
 
     my $src = [
         "/* Generated for Perl $Config::Config{version} */",
@@ -581,18 +550,19 @@ sub build_wrappers {
         q{#define OUROBOROS_STATIC static},
         map(qq{#include "$_"}, Ouroboros::Library::c_header()),
         "",
-        map(@{$_->{source}}, @perl_wrappers, @ouro_wrappers),
+        map(@{$_->{source}}, @wrappers),
         "",
         map(qq{#include "$_"}, Ouroboros::Library::c_source()),
     ];
 
-    my $defs = [ map $_->{def}, @perl_wrappers, @ouro_wrappers ];
+    my $defs = [ map $_->{def}, @wrappers ];
 
     return ($src, $defs);
 }
 
 sub build_bindings {
-    my ($wrapper_defs) = @_;
+    my ($functions, $wrapper_defs) = @_;
+
     return (
         "/* Generated for Perl $Config::Config{version} */",
         mod("types",
@@ -602,8 +572,7 @@ sub build_bindings {
         "#[macro_use]",
         mod("fn_bindings",
             "use super::types::*;",
-            perl_funcs(),
-            ouro_funcs()),
+            link_funcs($functions)),
         "",
         mod("fn_wrappers",
             "use super::types::*;",
@@ -635,6 +604,10 @@ sub write_file {
     close $fh;
 }
 
-my ($wrapper_src, $wrapper_defs) = build_wrappers();
+my $functions = [
+    read_embed_fnc(),
+    read_ouro_spec(),
+];
+my ($wrapper_src, $wrapper_defs) = build_wrappers($functions);
 write_file("perl_sys.c", @$wrapper_src);
-write_file("perl_sys.rs", build_bindings($wrapper_defs));
+write_file("perl_sys.rs", build_bindings($functions, $wrapper_defs));
