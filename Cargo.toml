@@ -3,6 +3,7 @@ name = "perl-sys"
 version = "0.1.0"
 authors = ["Vickenty Fesunov <kent@setattr.net>"]
 build = "build/build.rs"
+license = "BSD-2-Clause"
 
 [build-dependencies]
 gcc = "0.3"
