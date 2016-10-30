@@ -434,7 +434,7 @@ sub wrap_funcs {
 }
 
 sub perl_consts {
-    map(const($_, eval "B::$_"), grep /^SV(?!t_)/ || /^G_/, @B::EXPORT_OK);
+    map(const($_, B->can($_)->()), grep /^SV(?!t_)/ || /^G_/, @B::EXPORT_OK);
 }
 
 sub ouro_consts {
