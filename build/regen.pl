@@ -399,7 +399,7 @@ sub perl_types {
 
         # assumes that these three types have the same size
         type("Size_t", map_type_size("UV", $c->{sizesize})),
-        type("SSize_t", map_type_size("UV", $c->{sizesize})),
+        type("SSize_t", map_type_size("IV", $c->{sizesize})),
         type("STRLEN", map_type_size("UV", $c->{sizesize})),
 
         type("c_bool", map_type_size("UV", $os->{bool})),
