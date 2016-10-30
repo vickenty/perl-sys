@@ -341,8 +341,8 @@ sub linked_fn {
 }
 
 sub const {
-    my ($name, $value) = @_;
-    return "pub const $name: IV = $value;";
+    my ($name, $type, $value) = @_;
+    return "pub const $name: $type = $value;";
 }
 
 sub struct {
@@ -436,11 +436,13 @@ sub wrap_funcs {
 }
 
 sub perl_consts {
-    map(const($_, B->can($_)->()), grep /^SV(?!t_)/ || /^G_/, @B::EXPORT_OK);
+    map(const($_, "U32", B->can($_)->()), grep /^SV(?!t_)/ || /^G_/, @B::EXPORT_OK);
 }
 
 sub ouro_consts {
-    map(const($_, Ouroboros->can($_)->()), @Ouroboros::CONSTS);
+    map(const($_->{name}, $_->{c_type}, Ouroboros->can($_->{name})->()),
+        @{$Ouroboros::Spec::SPEC{enum}},
+        @{$Ouroboros::Spec::SPEC{const}});
 }
 
 sub xcpt_wrapper {
