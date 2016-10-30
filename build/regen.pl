@@ -7,7 +7,7 @@ use Config;
 use Config::Perl::V;
 
 use Ouroboros;
-use Ouroboros::Spec;
+use Ouroboros::Spec 0.11;
 use Ouroboros::Library;
 use File::Spec::Functions qw/catfile/;
 
@@ -440,9 +440,11 @@ sub perl_consts {
 }
 
 sub ouro_consts {
+    my %defined = map { $_, 1 } @Ouroboros::CONSTS;
+
     map(const($_->{name}, $_->{c_type}, Ouroboros->can($_->{name})->()),
         @{$Ouroboros::Spec::SPEC{enum}},
-        @{$Ouroboros::Spec::SPEC{const}});
+        grep($defined{$_->{name}}, @{$Ouroboros::Spec::SPEC{const}}));
 }
 
 sub xcpt_wrapper {

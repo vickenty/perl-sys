@@ -1,1 +1,1 @@
-requires "Ouroboros";
+requires "Ouroboros", ">= 0.11";
