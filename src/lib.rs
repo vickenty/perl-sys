@@ -27,3 +27,9 @@ fn test_svttype() {
     assert!(SVt_PVIV < SVt_PVAV);
     assert!(SVt_PVMG < SVt_PVAV);
 }
+
+#[test]
+fn test_alignment() {
+    use std::mem::align_of;
+    assert_eq!(align_of::<*mut u8>(), align_of::<types::OuroborosStack>());
+}

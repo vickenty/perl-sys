@@ -413,7 +413,9 @@ sub perl_types {
         type("Perl_call_checker", extern_fn("OP*", "OP*", "GV*", "SV*")),
         type("Perl_check_t", extern_fn("OP*", "OP*")),
 
-        struct("OuroborosStack", _data => sprintf("[u8; %d]", $os->{"ouroboros_stack_t"})),
+        struct("OuroborosStack",
+            _data => sprintf("[u8; %d]", $os->{"ouroboros_stack_t"}),
+            _align => "[*const u8; 0]"),
     );
 }
 
