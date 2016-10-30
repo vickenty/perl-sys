@@ -258,12 +258,6 @@ sub map_type_size {
     return TYPESIZEMAP->{$base}{$size} // die "$base size $size type is missing";
 }
 
-sub const_value {
-    my $name = shift;
-    my $getter = Ouroboros->can($name) // die "constant $name is not available";
-    return $getter->();
-}
-
 # Rust syntax
 
 sub ty {
@@ -453,7 +447,7 @@ sub perl_consts {
 }
 
 sub ouro_consts {
-    map(const($_, const_value($_)), @Ouroboros::CONSTS);
+    map(const($_, Ouroboros->can($_)->()), @Ouroboros::CONSTS);
 }
 
 sub xcpt_wrapper {
