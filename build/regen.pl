@@ -90,8 +90,6 @@ use constant {
     VARIADIC_IMPL => {
         "croak" => "vcroak",
     },
-
-    RUST_TYPE => "Rust",
 };
 
 sub parse_argument {
@@ -224,8 +222,6 @@ sub read_ouro_spec {
 sub map_type {
     my ($type) = @_;
 
-    return $$type if ref $type eq RUST_TYPE;
-
     # working copy
     my $work = $type;
 
@@ -259,11 +255,6 @@ sub map_type_size {
 }
 
 # Rust syntax
-
-sub ty {
-    my $type = shift;
-    return bless \$type, RUST_TYPE;
-}
 
 sub indent {
     map "    $_", @_;
@@ -359,7 +350,7 @@ sub struct {
 
     my @fields_rs;
     while (my ($name, $type) = splice @fields, 0, 2) {
-        push @fields_rs, sprintf "%s: %s,", $name, map_type($type);
+        push @fields_rs, sprintf "%s: %s,", $name, $type;
     }
 
     return (
@@ -422,7 +413,7 @@ sub perl_types {
         type("Perl_call_checker", extern_fn("OP*", "OP*", "GV*", "SV*")),
         type("Perl_check_t", extern_fn("OP*", "OP*")),
 
-        struct("OuroborosStack", _data => ty sprintf("[u8; %d]", $os->{"ouroboros_stack_t"})),
+        struct("OuroborosStack", _data => sprintf("[u8; %d]", $os->{"ouroboros_stack_t"})),
     );
 }
 
