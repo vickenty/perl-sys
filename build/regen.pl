@@ -19,6 +19,11 @@ use constant {
 
     PTHX_TYPE => "PerlThreadContext",
 
+    STRUCT_MAP => {
+        magic => "MAGIC",
+        mgvtbl => "MGVTBL",
+    },
+
     STUB_TYPES => [
         "PerlInterpreter",
         "PerlIO",
@@ -32,14 +37,13 @@ use constant {
         "IO",
         "BHK",
         "PERL_CONTEXT",
-        "MAGIC",
-        "MGVTBL",
         "PADLIST",
         "PADNAME",
         "PADNAMELIST",
         "HEK",
         "UNOP_AUX_item",
         "LOOP",
+        "CLONE_PARAMS",
     ],
 
     TYPEMAP => {
@@ -55,6 +59,9 @@ use constant {
 
         "bool" => "c_bool",
         "size_t" => "Size_t",
+
+        "MAGIC" => "MAGIC",
+        "MGVTBL" => "MGVTBL",
     },
 
     TYPESIZEMAP => {
@@ -100,7 +107,9 @@ sub parse_argument {
     }
 
     my ($type, $name) = $arg =~ /(.*)\b(\w+)/ or die "unparsable argument '$arg'";
-    $type =~ s/\s+$//;
+
+    $type = strip($type);
+    $name = strip($name);
 
     $name =~ s/^/a_/ if $name =~ /^(?:type|fn|unsafe|let|loop|ref)$/;
 
@@ -217,6 +226,50 @@ sub read_ouro_spec {
     return @fns;
 }
 
+sub parse_header {
+    my ($header, $names) = @_;
+    my $src = join "", read_file(catfile($Config{archlibexp}, "CORE", $header));
+
+    $src =~ s#/\*.*?\*/##g;
+    $src =~ s/\s+$//g;
+
+    my %defs;
+    while ($src =~ /struct\s+(?<name>\w+)\s*{(?<source>[^\}]+)}/g) {
+        my $name = $names->{$+{name}} // next;
+        $defs{$name} = {
+            name => $name,
+            source => $+{source},
+        };
+    }
+
+    foreach my $def (values %defs) {
+        my @fields;
+        foreach my $field (split /;/, $def->{source}) {
+            if ($field =~ /^(?<type>[^\(]+)\(\*(?<name>\w+)\)\s*\((?<pthx>pTHX_\s+)?(?<args>[^)]+)\)$/) {
+                my $type = strip($+{type});
+                my $name = strip($+{name});
+                my $pthx = defined $+{pthx};
+                my $args = strip($+{args});
+
+                push @fields, $name => callback_ptr($type, $pthx, map parse_argument($_), split /,/, $args),
+            }
+            else {
+                my ($type, $name) = @{parse_argument($field)};
+                push @fields, $name => map_type($type);
+            }
+        }
+
+        $def->{fields} = \@fields;
+    }
+
+    return %defs;
+}
+
+sub read_struct_defs {
+    my %defs = parse_header("mg.h", STRUCT_MAP);
+    return \%defs;
+}
+
 # Getters
 
 sub map_type {
@@ -331,6 +384,22 @@ sub extern_fn {
     });
 }
 
+sub callback_fn {
+    my ($type, $pthx, @args) = @_;
+
+    return _fn('extern "C"', {
+        type => $type,
+        name => "",
+        args => \@args,
+        take_pthx => $pthx,
+    });
+}
+
+sub callback_ptr {
+    my ($type, $pthx, @args) = @_;
+    return sprintf "Option<%s>", callback_fn($type, $pthx, @args);
+}
+
 sub linked_fn {
     my ($fn) = @_;
 
@@ -341,12 +410,22 @@ sub linked_fn {
 }
 
 sub const {
-    my ($name, $type, $value) = @_;
-    return "pub const $name: $type = $value;";
+    my ($name, $type, $head, @rest) = @_;
+
+    my @lines = (
+        "pub const $name: $type = $head",
+        @rest,
+    );
+
+    $lines[-1] .= ";";
+
+    return @lines;
 }
 
 sub struct {
     my ($name, @fields) = @_;
+
+    TYPEMAP->{$name} = $name;
 
     my @fields_rs;
     while (my ($name, $type) = splice @fields, 0, 2) {
@@ -359,6 +438,28 @@ sub struct {
         indent(@fields_rs),
         "}"
     );
+}
+
+sub struct_pub {
+    my ($name, @fields) = @_;
+
+    my @pub_fields;
+    while (my ($name, $type) = splice @fields, 0, 2) {
+        push @pub_fields, "pub $name" => $type;
+    }
+
+    return struct($name, @pub_fields);
+}
+
+sub struct_val {
+    my ($type, @fields) = @_;
+
+    my @init;
+    while (my ($name, $value) = splice @fields, 0, 2) {
+        push @init, "$name: $value,";
+    }
+
+    return "$type {", indent(@init), "}";
 }
 
 sub enum {
@@ -381,7 +482,7 @@ sub perl_types {
         ? type(PTHX_TYPE, "*mut PerlInterpreter")
         : type(PTHX_TYPE, "()");
 
-    return (
+    return [
         map(enum($_), @{STUB_TYPES()}),
 
         $pthx,
@@ -416,7 +517,7 @@ sub perl_types {
         struct("OuroborosStack",
             _data => sprintf("[u8; %d]", $os->{"ouroboros_stack_t"}),
             _align => "[*const u8; 0]"),
-    );
+    ];
 }
 
 sub sort_by_name {
@@ -566,13 +667,15 @@ sub build_wrappers {
 }
 
 sub build_bindings {
-    my ($functions, $wrapper_defs) = @_;
+    my ($type_defs, $functions, $wrapper_defs, $struct_defs) = @_;
 
     return (
         "/* Generated for Perl $Config::Config{version} */",
         mod("types",
             "#![allow(non_camel_case_types)]",
-            perl_types()),
+            @$type_defs,
+            map(struct_pub($_->{name}, @{$_->{fields}}), values %$struct_defs),
+        ),
         "",
         "#[macro_use]",
         mod("fn_bindings",
@@ -587,11 +690,32 @@ sub build_bindings {
             "#![allow(non_upper_case_globals)]",
             "use super::types::*;",
             perl_consts(),
-            ouro_consts()),
+            ouro_consts(),
+            mgvtbl_const($struct_defs),
+        ),
     );
 }
 
+sub mgvtbl_const {
+    my ($defs) = @_;
+
+    my $def = $defs->{MGVTBL} // return ();
+
+    my @fields = @{$def->{fields}};
+
+    my @init;
+    while (my ($name, $type) = splice @fields, 0, 2) {
+        push @init, $name, "None";
+    }
+
+    return const("EMPTY_MGVTBL", "MGVTBL", struct_val("MGVTBL", @init));
+}
+
 #
+
+sub strip {
+    shift =~ s/^\s+//r =~ s/\s+$//r;
+}
 
 sub read_file {
     my ($name, %opts) = @_;
@@ -609,10 +733,19 @@ sub write_file {
     close $fh;
 }
 
+#
+
 my $functions = [
     read_embed_fnc(),
     read_ouro_spec(),
 ];
+
+my $types = perl_types();
+
+my $struct_defs = read_struct_defs();
+
 my ($wrapper_src, $wrapper_defs) = build_wrappers($functions);
+
 write_file("perl_sys.c", @$wrapper_src);
-write_file("perl_sys.rs", build_bindings($functions, $wrapper_defs));
+write_file("perl_sys.rs",
+    build_bindings($types, $functions, $wrapper_defs, $struct_defs));
