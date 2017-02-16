@@ -87,8 +87,8 @@ pub unsafe fn try_rethrow(perl: Perl, err: Box<Any>) -> Box<Any> {
 #[cfg(perl_multiplicity)]
 #[macro_export]
 macro_rules! pthx {
-    ($( #[$me:meta] )* fn $id:ident ( $ctx:ident $(, $pid:ident : $pty:ty )* ) $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter $(, $pid : $pty )*) $body);
     ($( #[$me:meta] )* fn $id:ident ( $ctx:ident $(, $pid:ident : $pty:ty )* ) -> $rty:ty $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter $(, $pid : $pty )*) -> $rty $body);
+    ($( #[$me:meta] )* fn $id:ident ( $ctx:ident $(, $pid:ident : $pty:ty )* ) $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter $(, $pid : $pty )*) $body);
 
     ($id:ident ( $ctx:expr $(, $p:expr )* $(,)* )) => ($id($ctx $(, $p )*));
 }
