@@ -17,7 +17,7 @@ use constant {
     EMBED_FNC_PATH => "build/embed.fnc",
     OUT_DIR => $ENV{OUT_DIR} // ".",
 
-    PTHX_TYPE => "PerlThreadContext",
+    PERL_NAME => "Perl",
 
     STRUCT_MAP => {
         magic => "MAGIC",
@@ -85,12 +85,16 @@ use constant {
 
     BLACKLIST => {
         "sv_nolocking" => "listed as part of public api, but not actually defined",
+        "sv_nounlocking" => "listed as part of public api, but does nothing",
+        "sv_nosharing" => "listed as part of the public api, but does nothing",
     },
 
     NO_CATCH => {
         "ouroboros_xcpt_try" => "captures perl croaks itself",
         "ouroboros_xcpt_rethrow" => "has to be able to die",
         "croak" => "has to be able to die",
+        "croak_sv" => "has to be able to die",
+        "croak_no_modify" => "has to be able to die",
     },
 
     # Map from names of variadic functions to names of known equivalents taking va_list.
@@ -158,6 +162,11 @@ sub read_embed_fnc {
         ($type, @args) = map s/\b(?:VOL|NN|NULLOK)\b\s*//gr, ($type, @args);
 
         @args = map parse_argument($_), @args;
+
+        if (my $reason = BLACKLIST->{$name}) {
+            warn "skipping blacklisted '$name': $reason\n";
+            next;
+        }
 
         next unless
             # public
@@ -349,6 +358,7 @@ sub _fn {
 
     my @formal;
 
+    push @formal, $fn->{take_self} if $fn->{take_self};
     push @formal, "my_perl: *mut PerlInterpreter" if $fn->{take_pthx} && $Config{usemultiplicity};
 
     foreach my $arg (@{$fn->{args}}) {
@@ -433,14 +443,21 @@ sub struct {
     }
 
     return (
-        "#[repr(C)]",
         "pub struct $name {",
         indent(@fields_rs),
         "}"
     );
 }
 
-sub struct_pub {
+sub cstruct {
+    my ($name, @fields) = @_;
+    return (
+        "#[repr(C)]",
+        struct($name, @fields),
+    );
+}
+
+sub cstruct_pub {
     my ($name, @fields) = @_;
 
     my @pub_fields;
@@ -448,7 +465,7 @@ sub struct_pub {
         push @pub_fields, "pub $name" => $type;
     }
 
-    return struct($name, @pub_fields);
+    return cstruct($name, @pub_fields);
 }
 
 sub struct_val {
@@ -471,6 +488,34 @@ sub enum {
     return "pub enum $name {}";
 }
 
+sub impl {
+    my ($name, @lines) = @_;
+    return (
+        "impl $name {",
+        indent(@lines),
+        "}"
+    );
+}
+
+sub let {
+    my ($name, $type, $init) = @_;
+
+    return "let $name"
+        . ($type ? ": $type" : "")
+        . ($init ? " = $init" : "")
+        . ";";
+}
+
+sub rif {
+    my ($cond, $then, $else) = @_;
+
+    return (
+        "if $cond {",
+        indent(@$then),
+        "}",
+        $else ? ("{", indent(@$else), "}") : (),
+    );
+}
 
 # Output blocks
 
@@ -478,14 +523,8 @@ sub perl_types {
     my $c = \%Config::Config;
     my $os = \%Ouroboros::SIZE_OF;
 
-    my $pthx = $c->{usemultiplicity}
-        ? type(PTHX_TYPE, "*mut PerlInterpreter")
-        : type(PTHX_TYPE, "()");
-
     return [
         map(enum($_), @{STUB_TYPES()}),
-
-        $pthx,
 
         type("IV", map_type_size("IV", $c->{ivsize})),
         type("UV", map_type_size("UV", $c->{uvsize})),
@@ -514,7 +553,7 @@ sub perl_types {
         type("Perl_call_checker", extern_fn("OP*", "OP*", "GV*", "SV*")),
         type("Perl_check_t", extern_fn("OP*", "OP*")),
 
-        struct("OuroborosStack",
+        cstruct("OuroborosStack",
             _data => sprintf("[u8; %d]", $os->{"ouroboros_stack_t"}),
             _align => "[*const u8; 0]"),
     ];
@@ -550,11 +589,6 @@ sub ouro_consts {
 
 sub xcpt_wrapper {
     my ($fn) = @_;
-
-    if (my $reason = BLACKLIST->{$fn->{name}}) {
-        warn "skipping blacklisted '$fn->{name}': $reason\n";
-        return ();
-    }
 
     my $impl = $fn->{call_name};
 
@@ -653,7 +687,6 @@ sub build_wrappers {
         q{#include "EXTERN.h"},
         q{#include "perl.h"},
         q{#include "XSUB.h"},
-        q{#define OUROBOROS_STATIC static},
         map(qq{#include "$_"}, Ouroboros::Library::c_header()),
         "",
         map(@{$_->{source}}, @wrappers),
@@ -666,15 +699,91 @@ sub build_wrappers {
     return ($src, $defs);
 }
 
+sub proxy_method {
+    my ($fn) = @_;
+
+    my $can_throw = !NO_CATCH->{$fn->{name}};
+    my $use_retval = $can_throw && $fn->{type} ne "void";
+
+    return () if grep $_->[0] eq "...", @{$fn->{args}};
+
+    my $retval = "rv";
+    $retval++ while grep $_->[1] eq $retval, @{$fn->{args}};
+
+    my @actual;
+    push @actual, "self.pthx" if $Config{usemultiplicity} && $fn->{take_pthx};
+    push @actual, "&mut $retval" if $use_retval;
+    push @actual, map $_->[1], @{$fn->{args}};
+
+    my $proto = _fn("pub unsafe", {
+        %$fn,
+        take_pthx => 0,
+        take_self => "&self",
+    });
+
+    my @body;
+    if ($can_throw) {
+        push @body, let("mut $retval", map_type($fn->{type}), "::std::mem::zeroed()")
+            if $use_retval;
+
+        push @body, let("rc", undef, do {
+            local $" = ", ";
+            "::fn_wrappers::$fn->{name}(@actual)"
+        });
+
+        push @body, rif("rc != 0", [
+            "::panic_with_code(rc)",
+        ]);
+
+        push @body, $retval if $use_retval;
+    } else {
+        local $" = ", ";
+        push @body, "::fn_bindings::$fn->{name}(@actual)";
+    }
+
+    return (
+        "#[inline]",
+        "$proto {",
+        indent(@body),
+        "}",
+    );
+}
+
+sub perl_context {
+    my ($functions) = @_;
+
+    my $has_pthx = $Config{usemultiplicity};
+
+    my $pthx_type = $has_pthx
+        ? "*mut PerlInterpreter"
+        : "()";
+
+    my @ctor = (
+        sprintf("pub fn initialize(pthx: $pthx_type) -> %s {", PERL_NAME),
+        indent(
+            struct_val(PERL_NAME, pthx => "pthx")),
+        "}",
+    );
+
+    return (
+        "#[derive(Copy, Clone, PartialEq)]",
+        struct(PERL_NAME, pthx => $pthx_type),
+        "",
+        @ctor,
+        "",
+        impl(PERL_NAME,
+            map(proxy_method($_), sort_by_name @$functions)),
+    );
+}
+
 sub build_bindings {
     my ($type_defs, $functions, $wrapper_defs, $struct_defs) = @_;
 
     return (
         "/* Generated for Perl $Config::Config{version} */",
         mod("types",
-            "#![allow(non_camel_case_types)]",
             @$type_defs,
-            map(struct_pub($_->{name}, @{$_->{fields}}), values %$struct_defs),
+            map(cstruct_pub($_->{name}, @{$_->{fields}}), values %$struct_defs),
         ),
         "",
         "#[macro_use]",
@@ -687,12 +796,14 @@ sub build_bindings {
             wrap_funcs($wrapper_defs)),
         "",
         mod("consts",
-            "#![allow(non_upper_case_globals)]",
             "use super::types::*;",
             perl_consts(),
             ouro_consts(),
             mgvtbl_const($struct_defs),
         ),
+        "",
+        "use types::*;",
+        perl_context($functions),
     );
 }
 

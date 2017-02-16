@@ -1,4 +1,28 @@
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(non_camel_case_types)]
+
+use std::mem;
+use std::panic;
+use std::any::Any;
+use std::os::raw::c_int;
+
 include!(concat!(env!("OUT_DIR"), "/perl_sys.rs"));
+
+struct Carrier(c_int);
+
+fn panic_with_code(code: c_int) -> ! {
+    panic::resume_unwind(Box::new(Carrier(code)))
+}
+
+pub unsafe fn try_rethrow(perl: Perl, err: Box<Any>) -> Box<Any> {
+    if let Some(&Carrier(code)) = err.downcast_ref() {
+        mem::drop(err);
+        perl.ouroboros_xcpt_rethrow(code);
+        unreachable!();
+    }
+    err
+}
 
 #[cfg(perl_multiplicity)]
 #[macro_export]
