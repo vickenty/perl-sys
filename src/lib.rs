@@ -7,7 +7,7 @@ macro_rules! pthx {
     ($( #[$me:meta] )* fn $id:ident ( $ctx:ident, $( $pid:ident : $pty:ty ),* ) $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter, $( $pid : $pty ),*) $body);
 
     ($( #[$me:meta] )* fn $id:ident ( $ctx:ident ) -> $rty:ty $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter) -> $rty $body);
-    ($( #[$me:meta] )* fn $id:ident ( $ctx:ident, $( $pid:ident : $pty:ty ),* ) -> $rty:ty $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter, $( $pid : $pty ),*) -> $rty:ty $body);
+    ($( #[$me:meta] )* fn $id:ident ( $ctx:ident, $( $pid:ident : $pty:ty ),* ) -> $rty:ty $body:block) => ($( #[$me] )* pub extern "C" fn $id ($ctx: *mut $crate::types::PerlInterpreter, $( $pid : $pty ),*) -> $rty $body);
 
     ($id:ident ( $ctx:expr )) => ($id($ctx));
     ($id:ident ( $ctx:expr, $( $p:expr ),* $(,)* )) => ($id($ctx, $( $p ),*));
