@@ -11,7 +11,8 @@ use Ouroboros::Spec 0.11;
 use Ouroboros::Library;
 use File::Spec::Functions qw/catfile/;
 
-require "build/lib/version.pl" or die;
+use FindBin '$Bin';
+require "$Bin/lib/version.pl" or die;
 
 use constant {
     EMBED_FNC_PATH => "build/embed.fnc",
