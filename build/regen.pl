@@ -88,6 +88,7 @@ use constant {
         "sv_nolocking" => "listed as part of public api, but not actually defined",
         "sv_nounlocking" => "listed as part of public api, but does nothing",
         "sv_nosharing" => "listed as part of the public api, but does nothing",
+        "op_class" => "return type OPclass is not yet supported",
     },
 
     NO_CATCH => {
