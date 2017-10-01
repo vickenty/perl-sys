@@ -18,9 +18,11 @@ via `PERL` environment variable
 
     $ PERL=/opt/bin/custom-perl cargo build
 
-Under rare circumstances you may need to modify the ccflags for libperl.
-    Run perl -MConfig -e 'print $Config::Config{ccflags}'
-    Modify these flags as necessary, and override via the LIBPERL_CCFLAGS environment variable.
+Under rare circumstances you may need to modify the ccflags for libperl. Run
+
+    $ perl -MConfig -E 'say $Config::Config{ccflags}'
+
+Modify these flags as necessary, and override via the LIBPERL_CCFLAGS environment variable:
 
     $ LIBPERL_CCFLAGS=".." cargo build
 
