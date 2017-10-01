@@ -4,7 +4,6 @@ use autodie;
 
 use B;
 use Config;
-use Config::Perl::V;
 
 use Ouroboros;
 use Ouroboros::Spec 0.11;
@@ -12,12 +11,13 @@ use Ouroboros::Library;
 use File::Spec::Functions qw/catfile/;
 
 use FindBin '$Bin';
-require "$Bin/lib/version.pl" or die;
+use lib "$Bin/lib";
+
+use PerlSys::EmbedFnc qw/:all/;
+use PerlSys::IO qw/:all/;
+use PerlSys::RustSyn qw/:all/;
 
 use constant {
-    EMBED_FNC_PATH => "build/embed.fnc",
-    OUT_DIR => $ENV{OUT_DIR} // ".",
-
     PERL_NAME => "Perl",
 
     STRUCT_MAP => {
@@ -47,24 +47,6 @@ use constant {
         "CLONE_PARAMS",
     ],
 
-    TYPEMAP => {
-        "ouroboros_stack_t" => "OuroborosStack",
-        "ouroboros_xcpt_callback_t" => "extern fn(*mut ::std::os::raw::c_void)",
-
-        "void" => "::std::os::raw::c_void",
-        "int" => "::std::os::raw::c_int",
-        "unsigned" => "::std::os::raw::c_uint",
-        "unsigned int" => "::std::os::raw::c_uint",
-        "char" => "::std::os::raw::c_char",
-        "unsigned char" => "::std::os::raw::c_uchar",
-
-        "bool" => "c_bool",
-        "size_t" => "Size_t",
-
-        "MAGIC" => "MAGIC",
-        "MGVTBL" => "MGVTBL",
-    },
-
     TYPESIZEMAP => {
         IV => {
             1 => "i8",
@@ -84,13 +66,6 @@ use constant {
         },
     },
 
-    BLACKLIST => {
-        "sv_nolocking" => "listed as part of public api, but not actually defined",
-        "sv_nounlocking" => "listed as part of public api, but does nothing",
-        "sv_nosharing" => "listed as part of the public api, but does nothing",
-        "op_class" => "return type OPclass is not yet supported",
-    },
-
     NO_CATCH => {
         "ouroboros_xcpt_try" => "captures perl croaks itself",
         "ouroboros_xcpt_rethrow" => "has to be able to die",
@@ -104,114 +79,6 @@ use constant {
         "croak" => "vcroak",
     },
 };
-
-sub parse_argument {
-    my ($arg) = @_;
-
-    if ($arg eq "...") {
-        return [ "..." ];
-    }
-
-    my ($type, $name) = $arg =~ /(.*)\b(\w+)/ or die "unparsable argument '$arg'";
-
-    $type = strip($type);
-    $name = strip($name);
-
-    $name =~ s/^/a_/ if $name =~ /^(?:type|fn|unsafe|let|loop|ref)$/;
-
-    return [ $type, $name ];
-}
-
-sub read_embed_fnc {
-    my $embed_path = catfile(EMBED_FNC_PATH, current_apiver());
-    my $opts = Config::Perl::V::myconfig()->{options};
-    my @lines = read_file($embed_path);
-    my @scope = (1);
-    my @spec;
-    while (defined ($_ = shift @lines)) {
-        while (@lines && s/\\$/shift @lines/e) {}
-
-        next if !$_ || /^:/;
-
-        s/#\s*ifdef\s+(\w+)/#if defined($1)/;
-        s/#\s*ifndef\s+(\w+)/#if !defined($1)/;
-
-        if (my ($pp, $args) = /^#\s*(\w+)(.*)/) {
-            if ($pp eq "if") {
-                $args =~ s/defined\s*\([\w+]\)/\$opts->{$1}/;
-                unshift @scope, eval $args && $scope[0];
-            }
-            elsif ($pp eq "endif") {
-                die "unmatched #endif" if @scope < 2;
-                shift @scope;
-            }
-            elsif ($pp eq "else") {
-                $scope[0] = !$scope[0];
-            }
-            else {
-                die "unknown directive $pp";
-            }
-            next;
-        }
-
-        next unless $scope[0];
-
-        my ($flags, $type, $name, @args) = split /\s*\|\s*/;
-
-        ($type, @args) = map s/^\s+//r =~ s/\s+$//r, ($type, @args);
-
-        # perl volatile and nullability markers mean nothing here
-        ($type, @args) = map s/\b(?:VOL|NN|NULLOK)\b\s*//gr, ($type, @args);
-
-        @args = map parse_argument($_), @args;
-
-        if (my $reason = BLACKLIST->{$name}) {
-            warn "skipping blacklisted '$name': $reason\n";
-            next;
-        }
-
-        next unless
-            # public
-            $flags =~ /A/ &&
-            # documented
-            $flags =~ /d/ &&
-            # not a macro without c function
-            !($flags =~ /m/ && $flags !~ /b/) &&
-            # not experimental
-            $flags !~ /M/ &&
-            # not deprecated
-            $flags !~ /D/;
-
-        # va_list is useless in rust anyway
-        next if grep $_->[0] =~ /\bva_list\b/, @args;
-
-        my $link_name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
-
-        my $call_name = $name;
-        my $pass_pthx;
-
-        # If function has Perl_$name implementation, but no friendly $name macro.
-        if ($flags =~ /p/ && $flags =~ /o/ && $flags !~ /m/) {
-            $call_name = "Perl_$name";
-            $pass_pthx = 1;
-        }
-
-
-        push @spec, {
-            type => $type,
-            name => $name,
-            args => \@args,
-
-            link_name => $link_name,
-            call_name => $call_name,
-
-            take_pthx => $flags !~ /n/,
-            pass_pthx => $pass_pthx,
-        };
-    }
-
-    return @spec;
-}
 
 sub read_ouro_spec {
     my $spec = \%Ouroboros::Spec::SPEC;
@@ -283,240 +150,9 @@ sub read_struct_defs {
 
 # Getters
 
-sub map_type {
-    my ($type) = @_;
-
-    # working copy
-    my $work = $type;
-
-    # canonicalize const placement, "const int" is the same as "int const"
-    $work =~ s/const\s+(\w+)/$1 const/;
-
-    (my $base_type, $work) = $work =~ /^((?:unsigned )?\w+)\s*(.*)/
-        or die "unparsable type '$type'";
-
-    my $rust_type = TYPEMAP->{$base_type}
-        or die "unknown type $base_type (was: $type)";
-
-    my $lim = 100;
-    while ($work && --$lim > 0) {
-        my $mode = "mut";
-        if ($work =~ s/^const\s*//) {
-            $mode = "const";
-        }
-        if ($work =~ s/^\*\s*//) {
-            $rust_type = "*$mode $rust_type";
-        }
-    }
-    die "unparsable type '$type'" if !$lim;
-
-    return $rust_type;
-}
-
 sub map_type_size {
     my ($base, $size) = @_;
     return TYPESIZEMAP->{$base}{$size} // die "$base size $size type is missing";
-}
-
-# Rust syntax
-
-sub indent {
-    map "    $_", @_;
-}
-
-sub mod {
-    my ($name, @items) = @_;
-    return (
-        "pub mod $name {",
-        indent(@items),
-        "}",
-    );
-}
-
-sub type {
-    my ($name, $ty) = @_;
-
-    TYPEMAP->{$name} = $name;
-
-    return "pub type $name = $ty;";
-}
-
-sub extern {
-    my ($abi, @items) = @_;
-    return (
-        "extern \"$abi\" {",
-        indent(@items),
-        "}",
-    );
-}
-
-sub link_name {
-    my ($name) = @_;
-    return (qq!#[link_name="$name"]!);
-}
-
-sub _fn {
-    my ($qual, $fn) = @_;
-
-    my @formal;
-
-    push @formal, $fn->{take_self} if $fn->{take_self};
-    push @formal, "my_perl: *mut PerlInterpreter" if $fn->{take_pthx} && $Config{usemultiplicity};
-
-    foreach my $arg (@{$fn->{args}}) {
-        my ($type, $name) = @$arg;
-        if ($type eq "...") {
-            push @formal, "...";
-        }
-        else {
-            my $rs_type = map_type($type);
-            push @formal, $name ? "$name: $rs_type" : $rs_type;
-        }
-    }
-
-    my $returns = $fn->{type} eq "void" ? "" : " -> " . map_type($fn->{type});
-
-    local $" = ", ";
-
-    return "$qual fn $fn->{name}(@formal)$returns";
-}
-
-sub fn {
-    return _fn("pub", @_) . ";";
-}
-
-sub extern_fn {
-    my ($type, @args) = @_;
-
-    return _fn('extern "C"', {
-        type => $type,
-        name => "",
-        args => [ map [ $_ ], @args ],
-        take_pthx => 1,
-    });
-}
-
-sub callback_fn {
-    my ($type, $pthx, @args) = @_;
-
-    return _fn('extern "C"', {
-        type => $type,
-        name => "",
-        args => \@args,
-        take_pthx => $pthx,
-    });
-}
-
-sub callback_ptr {
-    my ($type, $pthx, @args) = @_;
-    return sprintf "Option<%s>", callback_fn($type, $pthx, @args);
-}
-
-sub linked_fn {
-    my ($fn) = @_;
-
-    return (
-        link_name($fn->{link_name}),
-        fn($fn),
-    );
-}
-
-sub const {
-    my ($name, $type, $head, @rest) = @_;
-
-    my @lines = (
-        "pub const $name: $type = $head",
-        @rest,
-    );
-
-    $lines[-1] .= ";";
-
-    return @lines;
-}
-
-sub struct {
-    my ($name, @fields) = @_;
-
-    TYPEMAP->{$name} = $name;
-
-    my @fields_rs;
-    while (my ($name, $type) = splice @fields, 0, 2) {
-        push @fields_rs, sprintf "%s: %s,", $name, $type;
-    }
-
-    return (
-        "pub struct $name {",
-        indent(@fields_rs),
-        "}"
-    );
-}
-
-sub cstruct {
-    my ($name, @fields) = @_;
-    return (
-        "#[repr(C)]",
-        struct($name, @fields),
-    );
-}
-
-sub cstruct_pub {
-    my ($name, @fields) = @_;
-
-    my @pub_fields;
-    while (my ($name, $type) = splice @fields, 0, 2) {
-        push @pub_fields, "pub $name" => $type;
-    }
-
-    return cstruct($name, @pub_fields);
-}
-
-sub struct_val {
-    my ($type, @fields) = @_;
-
-    my @init;
-    while (my ($name, $value) = splice @fields, 0, 2) {
-        push @init, "$name: $value,";
-    }
-
-    return "$type {", indent(@init), "}";
-}
-
-sub enum {
-    my ($name, @items) = @_;
-    die "non-empty enums are not supported yet" if @items;
-
-    TYPEMAP->{$name} = $name;
-
-    return "pub enum $name {}";
-}
-
-sub impl {
-    my ($name, @lines) = @_;
-    return (
-        "impl $name {",
-        indent(@lines),
-        "}"
-    );
-}
-
-sub let {
-    my ($name, $type, $init) = @_;
-
-    return "let $name"
-        . ($type ? ": $type" : "")
-        . ($init ? " = $init" : "")
-        . ";";
-}
-
-sub rif {
-    my ($cond, $then, $else) = @_;
-
-    return (
-        "if $cond {",
-        indent(@$then),
-        "}",
-        $else ? ("{", indent(@$else), "}") : (),
-    );
 }
 
 # Output blocks
@@ -822,28 +458,6 @@ sub mgvtbl_const {
     }
 
     return const("EMPTY_MGVTBL", "MGVTBL", struct_val("MGVTBL", @init));
-}
-
-#
-
-sub strip {
-    shift =~ s/^\s+//r =~ s/\s+$//r;
-}
-
-sub read_file {
-    my ($name, %opts) = @_;
-    open my $fh, "<", $name;
-    my @lines = <$fh>;
-    close $fh;
-    chomp foreach @lines;
-    return @lines;
-}
-
-sub write_file {
-    my ($name, @lines) = @_;
-    open my $fh, ">", catfile(OUT_DIR, $name);
-    $fh->print(map "$_\n", @lines);
-    close $fh;
 }
 
 #

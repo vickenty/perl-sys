@@ -5,7 +5,9 @@ use warnings;
 use Getopt::Long;
 use File::Spec::Functions qw/catfile/;
 
-require "build/lib/version.pl" or die;
+use FindBin qw/$Bin/;
+use lib "$Bin/lib";
+use PerlSys::Version qw/:all/;
 
 my ($path) = @ARGV;
 
