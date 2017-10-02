@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/vickenty/perl-sys.svg?branch=master)](https://travis-ci.org/vickenty/perl-sys)
+
 # Perl XS bindings for Rust
 
 This crate provides raw low-level bindings for Perl XS API.
