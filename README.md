@@ -10,6 +10,16 @@ This crate provides raw low-level bindings for Perl XS API.
 * Perl 5.18 or later
 * Perl packages:
   * Ouroboros
+  * File::ShareDir
+
+## Setup
+
+### Packages
+
+```bash
+cpan install Ouroboros
+cpan install File::ShareDir
+```
 
 ## Build
 
