@@ -40,7 +40,7 @@ impl Perl {
 }
 
 fn build(perl: &Perl) {
-    let mut gcc = gcc::Config::new();
+    let mut gcc = gcc::Build::new();
 
     let ccflags = std::env::var("LIBPERL_CCFLAGS").unwrap_or_else(|_e| { perl.cfg("ccflags") });
     for flag in ccflags.split_whitespace() {
