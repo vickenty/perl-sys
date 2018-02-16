@@ -1,4 +1,4 @@
-extern crate gcc;
+extern crate cc;
 
 use std::path::{ PathBuf, Path };
 use std::process::Command;
@@ -40,21 +40,21 @@ impl Perl {
 }
 
 fn build(perl: &Perl) {
-    let mut gcc = gcc::Config::new();
+    let mut cc = cc::Build::new();
 
     let ccflags = std::env::var("LIBPERL_CCFLAGS").unwrap_or_else(|_e| { perl.cfg("ccflags") });
     for flag in ccflags.split_whitespace() {
-        gcc.flag(flag);
+        cc.flag(flag);
     }
-    gcc.flag("-g");
-    gcc.flag("-finline-functions");
+    cc.flag("-g");
+    cc.flag("-finline-functions");
 
-    gcc.include(&perl.path_core());
+    cc.include(&perl.path_core());
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is set");
-    gcc.file(Path::new(&out_dir).join("perl_sys.c"));
+    cc.file(Path::new(&out_dir).join("perl_sys.c"));
 
-    gcc.compile("libperlsys.a");
+    cc.compile("libperlsys.a");
 }
 
 fn main() {
