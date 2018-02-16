@@ -11,6 +11,12 @@ This crate provides raw low-level bindings for Perl XS API.
 * Perl packages:
   * Ouroboros
 
+## Setup
+
+```bash
+cpan install -T Ouroboros
+```
+
 ## Build
 
 Bindings are generated during build process for a specific version of the perl
