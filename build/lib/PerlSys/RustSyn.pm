@@ -57,29 +57,36 @@ sub map_type {
 
     # working copy
     my $work = $type;
-
-    # canonicalize const placement, "const int" is the same as "int const"
-    $work =~ s/const\s+(\w+)/$1 const/;
-
-    (my $base_type, $work) = $work =~ /^((?:unsigned )?\w+)\s*(.*)/
-        or die "unparsable type '$type'";
-
-    my $rust_type = TYPEMAP->{$base_type}
-        or die "unknown type $base_type (was: $type)";
+    my $mode = "mut";
+    my @base_type;
+    my @ptr;
 
     my $lim = 100;
     while ($work && --$lim > 0) {
-        my $mode = "mut";
         if ($work =~ s/^const\s*//) {
             $mode = "const";
         }
-        if ($work =~ s/^\*\s*//) {
-            $rust_type = "*$mode $rust_type";
+        elsif ($work =~ s/^volatile\s*//) {
+        }
+        elsif ($work =~ s/^(\w+)\s*//) {
+            push @base_type, $1;
+        }
+        elsif ($work =~ s/^\*\s*//) {
+            unshift @ptr, $mode;
+            $mode = "mut";
+        }
+        else {
+            die "can't parse $work (was: $type)";
         }
     }
+
     die "unparsable type '$type'" if !$lim;
 
-    return $rust_type;
+    my $base_type = join " ", @base_type;
+    my $rust_type = TYPEMAP->{$base_type}
+        or die "unknown type $base_type (was: $type)";
+
+    return join " ", map("*$_", @ptr), $rust_type;
 }
 
 
