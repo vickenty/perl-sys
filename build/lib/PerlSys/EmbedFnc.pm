@@ -112,12 +112,13 @@ sub read_embed_fnc {
         my $link_name = $flags =~ /[pb]/ ? "Perl_$name" : $name;
 
         my $call_name = $name;
+        my $take_pthx = $flags !~ /n/;
         my $pass_pthx;
 
         # If function has Perl_$name implementation, but no friendly $name macro.
         if ($flags =~ /p/ && $flags =~ /o/ && $flags !~ /m/) {
             $call_name = "Perl_$name";
-            $pass_pthx = 1;
+            $pass_pthx = $take_pthx;
         }
 
 
@@ -129,7 +130,7 @@ sub read_embed_fnc {
             link_name => $link_name,
             call_name => $call_name,
 
-            take_pthx => $flags !~ /n/,
+            take_pthx => $take_pthx,
             pass_pthx => $pass_pthx,
         };
     }
