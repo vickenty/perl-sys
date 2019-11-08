@@ -60,7 +60,7 @@ pub unsafe fn try_rethrow(perl: Perl, err: Box<Any>) -> Box<Any> {
 ///
 /// # Defining functions
 ///
-/// Fist two forms are used to define functions:
+/// First two forms are used to define functions:
 ///
 /// ```ignore
 /// pthx! {
