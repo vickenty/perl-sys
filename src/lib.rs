@@ -99,7 +99,7 @@ macro_rules! pthx {
     ($(#[$me:meta])* fn $id:ident ( $ctx:ident $(, $pid:ident : $pty:ty )* ) -> $rty:ty $body:block) => ($(#[$me])* pub extern "C" fn $id ($( $pid : $pty ),*) -> $rty { let $ctx = (); $body });
     ($(#[$me:meta])* fn $id:ident ( $ctx:ident $(, $pid:ident : $pty:ty )* ) $body:block) => ($(#[$me])* pub extern "C" fn $id ($( $pid : $pty ),*) { let $ctx = (); $body });
 
-    ($id:ident ( $ctx:expr $(, $p:expr ),* $(,)* )) => ($id($( $p ),*));
+    ($id:ident ( $ctx:expr $(, $p:expr )* $(,)* )) => ($id($( $p ),*));
 }
 
 #[test]
