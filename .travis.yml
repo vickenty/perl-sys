@@ -8,3 +8,10 @@ env:
   - PERL5LIB=~/perl5/lib/perl5
 before_install:
   - cpanm --local-lib=~/perl5 --quiet --installdeps --notest .
+addons:
+  apt:
+    packages:
+      - libperl-dev
+script:
+  - cargo test --verbose
+  - cargo run --example embed
