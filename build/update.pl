@@ -44,6 +44,7 @@ my $blead_ver = format_apiver(@blead_ver{qw/revision version subversion/});
 $latest{$blead_ver} = "blead";
 
 foreach my $apiver (keys %latest) {
+    print "$apiver => $latest{$apiver}\n";
     my $embed = `cd "$path" && git show "$latest{$apiver}:embed.fnc"`;
     open my $fh, ">", "build/embed.fnc/$apiver";
     $fh->print($embed);
